@@ -1,0 +1,113 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// --- ipc mock --------------------------------------------------------------
+// Clear/Compact call writeSession directly; mock it so we can assert the
+// exact command + session id without touching the real Tauri bridge.
+vi.mock("../../ipc/commands", () => ({
+  writeSession: vi.fn(() => Promise.resolve()),
+}));
+
+import { writeSession } from "../../ipc/commands";
+import { SessionActions } from "./SessionActions";
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+function renderActions(overrides: Partial<{
+  sessionId: string;
+  isExpanded: boolean;
+  onExpand: (id: string) => void;
+  onCollapse: (id: string) => void;
+  onClose: (id: string) => void;
+}> = {}) {
+  const props = {
+    sessionId: "s1",
+    isExpanded: false,
+    onExpand: vi.fn(),
+    onCollapse: vi.fn(),
+    onClose: vi.fn(),
+    ...overrides,
+  };
+  render(<SessionActions {...props} />);
+  return props;
+}
+
+describe("<SessionActions />", () => {
+  it("renders four icon buttons with accessible labels", () => {
+    renderActions();
+    expect(
+      screen.getByRole("button", { name: "Clear session s1" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Compact session s1" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Expand session s1" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Close session s1" }),
+    ).toBeTruthy();
+  });
+
+  it("sends /clear + carriage return on Clear", () => {
+    renderActions();
+    screen.getByRole("button", { name: "Clear session s1" }).click();
+    expect(writeSession).toHaveBeenCalledWith("s1", "/clear\r");
+  });
+
+  it("sends /compact + carriage return on Compact", () => {
+    renderActions();
+    screen.getByRole("button", { name: "Compact session s1" }).click();
+    expect(writeSession).toHaveBeenCalledWith("s1", "/compact\r");
+  });
+
+  it("calls onExpand with the session id when not expanded", () => {
+    const { onExpand } = renderActions({ isExpanded: false });
+    screen.getByRole("button", { name: "Expand session s1" }).click();
+    expect(onExpand).toHaveBeenCalledWith("s1");
+  });
+
+  it("renders a Collapse control and calls onCollapse when expanded", () => {
+    const { onCollapse } = renderActions({ isExpanded: true });
+    const button = screen.getByRole("button", { name: "Collapse session" });
+    button.click();
+    expect(onCollapse).toHaveBeenCalledWith("s1");
+    // The expand variant must not be present in the expanded state.
+    expect(
+      screen.queryByRole("button", { name: "Expand session s1" }),
+    ).toBeNull();
+  });
+
+  it("calls onClose with the session id", () => {
+    const { onClose } = renderActions();
+    screen.getByRole("button", { name: "Close session s1" }).click();
+    expect(onClose).toHaveBeenCalledWith("s1");
+  });
+
+  it("stops click propagation so the tile focus handler does not fire", () => {
+    const onTileClick = vi.fn();
+    render(
+      <div onClick={onTileClick}>
+        <SessionActions
+          sessionId="s1"
+          isExpanded={false}
+          onExpand={vi.fn()}
+          onCollapse={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </div>,
+    );
+    for (const name of [
+      "Clear session s1",
+      "Compact session s1",
+      "Expand session s1",
+      "Close session s1",
+    ]) {
+      screen.getByRole("button", { name }).click();
+    }
+    expect(onTileClick).not.toHaveBeenCalled();
+  });
+});

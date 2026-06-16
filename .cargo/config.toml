@@ -1,0 +1,4 @@
+# Machine safety: cap Rust build parallelism to half the 8 logical cores so a
+# Tauri compile leaves headroom for concurrent node builders and the running session.
+[build]
+jobs = 4

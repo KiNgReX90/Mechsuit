@@ -1,0 +1,16 @@
+# Node / frontend
+node_modules
+dist
+dist-ssr
+*.local
+
+# Rust / Tauri build output
+target
+src-tauri/target
+
+# Editor / OS
+.DS_Store
+*.log
+
+# Tauri generated (schemas, capabilities)
+src-tauri/gen

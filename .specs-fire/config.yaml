@@ -1,0 +1,16 @@
+# FIRE team per-project configuration. Read by .specsmd/fire/agents/team/agent.md.
+# Every key is optional; an absent key falls back to host/project defaults.
+
+# Worker model tiers for the orchestrator's complexity gate.
+# Passed VERBATIM as the per-dispatch model override (Claude Code Agent-tool aliases).
+models:
+  strong: opus     # complexity medium/high (contract items, backends, workspace-grid)
+  cheap: sonnet    # complexity low / kind config-only|docs-only|test (grid-layout-util)
+
+# Authoritative finalize gate: ordered shell commands the orchestrator runs ONCE on the
+# integrated tree before merging an intent. (Paths assume the project-init scaffold.)
+verification:
+  finalize:
+    - npm run build
+    - npm test
+    - cargo test --manifest-path src-tauri/Cargo.toml

@@ -1,0 +1,384 @@
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0.3rem;
+}
+
+/* Brand wordmark at the top of the rail (decorative; gradient ink). */
+.sidebar-content::before {
+  content: "◈ MECHSUIT";
+  display: block;
+  flex: 0 0 auto;
+  padding: 0.85rem 0.95rem 0.6rem;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.2em;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.15rem 0.95rem 0.4rem;
+}
+
+.sidebar-title {
+  font-weight: 600;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.sidebar-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, transform 0.12s ease;
+}
+
+.sidebar-add-button:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.sidebar-add-button:active {
+  transform: translateY(0);
+}
+
+.sidebar-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0 0.7rem 0.4rem;
+}
+
+.sidebar-add-form {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.sidebar-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-1);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidebar-add-input::placeholder {
+  color: var(--text-dim);
+}
+
+.sidebar-add-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.sidebar-add-submit {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-add-submit:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+/* Discovered-directories dropdown under the add input. */
+.sidebar-add-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev-2);
+  box-shadow: var(--shadow-1);
+}
+
+.sidebar-add-suggestion-item {
+  display: flex;
+}
+
+.sidebar-add-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sidebar-add-suggestion:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.sidebar-add-suggestion:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.sidebar-add-suggestion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.sidebar-add-suggestion-name {
+  font-weight: 600;
+  font-size: 0.84rem;
+  color: var(--text);
+}
+
+.sidebar-add-suggestion-branch {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--status-ready);
+}
+
+.sidebar-add-suggestion-managed {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}
+
+.sidebar-add-suggestion-path {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.55rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow-y: auto;
+}
+
+.sidebar-directory-item {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The card frame: border + radius live on the row, children fill it. */
+.sidebar-directory-row {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.sidebar-directory-row:hover {
+  border-color: var(--border-strong);
+}
+
+.sidebar-directory {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.18rem;
+  padding: 0.6rem 0.7rem;
+  border: none;
+  background: var(--bg-elev-2);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidebar-directory:hover {
+  background: var(--bg-elev-3);
+}
+
+.sidebar-directory--active {
+  background: linear-gradient(
+    90deg,
+    var(--accent-soft-2),
+    var(--accent-soft) 45%,
+    transparent
+  );
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.sidebar-directory-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.sidebar-directory-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  flex: 0 0 auto;
+  border: none;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-directory-item:hover .sidebar-directory-remove,
+.sidebar-directory-remove:focus-visible {
+  opacity: 1;
+}
+
+.sidebar-directory-remove:hover {
+  background: rgba(247, 109, 109, 0.16);
+  color: var(--status-error);
+}
+
+.sidebar-directory-edited {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.sidebar-directory-edited--stale {
+  color: #d08a2c;
+}
+
+.sidebar-directory-stale-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #d08a2c;
+  box-shadow: 0 0 6px rgba(208, 138, 44, 0.6);
+}
+
+.sidebar-directory-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  margin-top: 0.35rem;
+  border: 1px solid rgba(247, 109, 109, 0.4);
+  border-left: 3px solid var(--status-error);
+  border-radius: var(--radius);
+  background: rgba(247, 109, 109, 0.1);
+  font-size: 0.76rem;
+  color: var(--text);
+}
+
+.sidebar-directory-confirm-actions {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.sidebar-directory-confirm-yes,
+.sidebar-directory-confirm-no {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-directory-confirm-yes {
+  border-color: var(--status-error);
+  color: #ff9292;
+}
+
+.sidebar-directory-confirm-yes:hover {
+  background: rgba(247, 109, 109, 0.22);
+  color: #fff;
+}
+
+.sidebar-directory-confirm-no:hover {
+  background: var(--bg-elev-3);
+  color: var(--text);
+}
+
+.sidebar-directory-path {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  word-break: break-all;
+  line-height: 1.3;
+}
+
+.sidebar-directory-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--status-ready);
+}
+
+/* Small node beside the branch name. */
+.sidebar-directory-branch::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}

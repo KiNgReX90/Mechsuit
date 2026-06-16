@@ -1,0 +1,260 @@
+project:
+  name: mechsuit
+  description: >-
+    Tauri desktop app (Rust backend, React frontend) — a single-screen control
+    surface for managing many concurrent agent/terminal sessions across directories.
+  created: 2026-06-16T04:45:28Z
+  fire_version: "0.1.8"
+
+workspace:
+  type: greenfield
+  structure: monolith
+  autonomy_bias: balanced
+  run_scope_preference: null
+  run_scope_history: []
+
+intents:
+  - id: foundation-terminal-grid
+    title: Foundation — Sidebar Navigation & Multi-Terminal Grid Workspace
+    status: completed
+    claimed_at: 2026-06-16T05:11:40Z
+    completed_at: 2026-06-16T05:48:26Z
+    work_items:
+      - id: project-init
+        title: Project scaffold — Tauri v2 + React + TS build and test harness
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: []
+      - id: rust-ipc-contract
+        title: Rust IPC contract — command surface, models, events, PTY registry wiring
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [project-init]
+      - id: ts-ipc-contract
+        title: Frontend IPC contract — types, command/event wrappers, stores, app shell
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [project-init]
+      - id: grid-layout-util
+        title: Grid tiling utility — top-row-heavy two-row layout
+        status: completed
+        complexity: low
+        mode: autopilot
+        depends_on: [project-init]
+      - id: directory-backend
+        title: Directory backend — add/list/remove, git branch detection, persistence
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [rust-ipc-contract]
+      - id: pty-backend
+        title: PTY backend — spawn/stream/write/resize/kill, per-directory session registry
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: [rust-ipc-contract]
+      - id: sidebar-ui
+        title: Sidebar UI — directory list, + add, git branch display, selection
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [ts-ipc-contract]
+      - id: terminal-view
+        title: Terminal view — xterm.js pane bound to a session
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [ts-ipc-contract]
+      - id: workspace-grid
+        title: Workspace grid — action bar, tiled sessions, expand/focus, input routing
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: [ts-ipc-contract, grid-layout-util, terminal-view]
+
+  - id: session-status-engine
+    title: Session Status Engine — output-driven state machine & border styling
+    status: completed
+    claimed_at: 2026-06-16T06:10:09Z
+    completed_at: 2026-06-16T06:26:41Z
+    depends_on_intents: [foundation-terminal-grid]
+    work_items:
+      - id: status-model-store
+        title: Status model & store — SessionStatus type + per-session statusStore
+        status: completed
+        complexity: low
+        mode: autopilot
+        depends_on: []
+      - id: status-parser
+        title: Status parser — agent-agnostic approval/error heuristics
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [status-model-store]
+      - id: status-engine
+        title: Status engine — live output→status wiring, idle debounce, ack-on-focus
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: [status-model-store, status-parser]
+      - id: status-border-styling
+        title: Status border styling — per-status tile borders, focus wins, ready blink
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [status-model-store]
+
+  - id: sidebar-status-dots
+    title: Sidebar Status Dots — per-directory ready/waiting/error aggregation
+    status: pending
+    depends_on_intents: [foundation-terminal-grid, session-status-engine]
+    work_items: []
+
+  - id: session-quick-actions
+    title: Session Quick Actions — per-session Clear / Compact / Expand / Close icon buttons
+    status: completed
+    claimed_at: 2026-06-16T06:12:32Z
+    completed_at: 2026-06-16T06:26:50Z
+    depends_on_intents: [foundation-terminal-grid]
+    work_items:
+      - id: session-actions-component
+        title: SessionActions component — per-session icon action group (clear/compact/expand/close)
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: []
+      - id: sessions-store-close
+        title: sessionsStore.removeSession — kill a session and drop it from its directory list
+        status: completed
+        complexity: low
+        mode: autopilot
+        depends_on: []
+      - id: wire-session-actions
+        title: Wire SessionActions into the grid tiles and expanded view
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [session-actions-component, sessions-store-close]
+
+  - id: commander-supervisor-agent
+    title: Commander — Central Supervisor Agent
+    status: completed
+    claimed_at: 2026-06-16T08:47:15Z
+    completed_at: 2026-06-16T09:30:09Z
+    depends_on_intents: [foundation-terminal-grid]
+    work_items:
+      - id: session-output-buffer
+        title: Session output buffer — capped per-session scrollback + in-process accessor
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: []
+      - id: mechsuit-mcp-server
+        title: mechsuit MCP server — local HTTP server exposing session tools to Commander
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: [session-output-buffer]
+      - id: commander-claude-driver
+        title: Commander Claude driver — spawn headless claude (no API key) wired to the MCP server
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: [mechsuit-mcp-server]
+      - id: commander-overlay
+        title: Commander overlay — chat window component (markdown, history) over the CommanderEngine
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [commander-claude-driver]
+      - id: commander-app-wiring
+        title: Commander wiring — Ctrl+Shift+C hotkey, uiStore open state, mount, engine + navigate event
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [commander-overlay, commander-claude-driver]
+      - id: dir-last-modified
+        title: Directory last-modified — git-aware staleness signal, sidebar display + manual remove
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: []
+      - id: workspace-discovery
+        title: Workspace discovery — git-aware bounded walk for candidate session groups
+        status: completed
+        complexity: medium
+        mode: autopilot
+        depends_on: [dir-last-modified]
+      - id: commander-workspace-tools
+        title: Commander workspace tools — discover/add/remove_project MCP tools + persona & home-rooted spawn
+        status: completed
+        complexity: high
+        mode: autopilot
+        depends_on: [mechsuit-mcp-server, commander-claude-driver, workspace-discovery]
+
+  - id: settings-workspace-root
+    title: Settings Panel — Configurable Workspace Root
+    status: pending
+    depends_on_intents: [foundation-terminal-grid]
+    work_items:
+      - id: settings-backend
+        title: Settings backend — persisted app settings + workspace root default-from-HOME + discover wiring
+        status: pending
+        complexity: medium
+        mode: autopilot
+        depends_on: []
+      - id: settings-store-ipc
+        title: Settings IPC + store — types, invoke wrappers, settingsStore
+        status: pending
+        complexity: low
+        mode: autopilot
+        depends_on: [settings-backend]
+      - id: settings-panel-ui
+        title: Settings panel UI — gear control + panel with workspace-root field
+        status: pending
+        complexity: medium
+        mode: autopilot
+        depends_on: [settings-store-ipc]
+
+  - id: commander-voice-input
+    title: Commander Voice Input — Push-to-Talk Speech-to-Text
+    status: pending
+    depends_on_intents: [commander-supervisor-agent]
+    work_items:
+      - id: whisper-stt-backend
+        title: Whisper STT backend — mic capture + whisper.cpp + transcribe command
+        status: pending
+        complexity: high
+        mode: autopilot
+        depends_on: []
+      - id: commander-push-to-talk-ui
+        title: Commander push-to-talk UI — hold-space-when-empty record + insert transcript
+        status: pending
+        complexity: medium
+        mode: autopilot
+        depends_on: [whisper-stt-backend]
+
+  - id: commander-tts-piper
+    title: Commander TTS — Spoken Replies via Piper
+    status: pending
+    depends_on_intents: [commander-supervisor-agent]
+    work_items:
+      - id: piper-tts-backend
+        title: Piper TTS backend — resolve voice model + synthesize + play, speak command
+        status: pending
+        complexity: high
+        mode: autopilot
+        depends_on: []
+      - id: commander-tts-wiring
+        title: Commander TTS wiring — speak assistant replies + mute toggle
+        status: pending
+        complexity: medium
+        mode: autopilot
+        depends_on: [piper-tts-backend]
+
+runs:
+  active: []
+  completed: []

@@ -1,0 +1,8 @@
+/* Terminal pane fills its grid cell; xterm renders into this container. */
+.terminal-pane {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 4px 6px;
+  background: #0a0d13;
+}
