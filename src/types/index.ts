@@ -65,3 +65,31 @@ export interface SessionStatusState {
 export interface AppSettings {
   workspaceRoot: string;
 }
+
+/**
+ * A single rolling-window usage bucket returned by the backend usage meter.
+ * `resetsAt` is an RFC3339 timestamp string marking when the window closes.
+ */
+export interface UsageWindow {
+  utilization: number;
+  resetsAt: string; // RFC3339
+}
+
+/**
+ * A point-in-time snapshot of Claude API usage, covering the 5-hour and
+ * 7-day rolling windows. Mirrors the Rust `UsageSnapshot` (camelCase).
+ */
+export interface UsageSnapshot {
+  fiveHour: UsageWindow;
+  sevenDay: UsageWindow;
+}
+
+/**
+ * Payload of the `usage://updated` event. Either `snapshot` carries the
+ * latest data or `error` carries a human-readable failure reason; the other
+ * field is null.
+ */
+export interface UsageUpdate {
+  snapshot: UsageSnapshot | null;
+  error: string | null;
+}

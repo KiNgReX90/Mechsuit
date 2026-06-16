@@ -6,7 +6,7 @@
  */
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { ExitEvent, OutputEvent } from "../types";
+import type { ExitEvent, OutputEvent, UsageUpdate } from "../types";
 
 /** Subscribe to `session://output`; returns an unlisten function. */
 export function onSessionOutput(
@@ -43,4 +43,15 @@ export function onCommanderDirectoriesChanged(
   cb: () => void,
 ): Promise<UnlistenFn> {
   return listen("commander://directories-changed", () => cb());
+}
+
+/**
+ * Subscribe to `usage://updated`; returns an unlisten function. Fired by the
+ * backend meter whenever the rolling-window snapshot changes. The payload is a
+ * `UsageUpdate` carrying either fresh data or an error string.
+ */
+export function onUsageUpdated(
+  cb: (u: UsageUpdate) => void,
+): Promise<UnlistenFn> {
+  return listen<UsageUpdate>("usage://updated", (event) => cb(event.payload));
 }
