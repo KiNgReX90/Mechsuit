@@ -26,8 +26,14 @@ uuid = { version = "1", features = ["v4"] }
 rmcp = { version = "1", default-features = false, features = ["server", "macros", "transport-streamable-http-server"] }
 schemars = "1"
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time"] }
 tokio-util = "0.7"
+
+# Claude subscription usage meter: GET the undocumented OAuth usage endpoint.
+# Already in the tree transitively (via rmcp) at 0.13.x without a TLS backend;
+# pulled in directly here with a rustls TLS backend so HTTPS resolves, plus
+# json. (reqwest 0.13 renamed the old `rustls-tls` feature to `rustls`.)
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 [features]
 # This feature is used for production builds where `devUrl` is disabled.

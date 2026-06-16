@@ -264,7 +264,7 @@ intents:
     work_items:
       - id: usage-backend
         title: Usage backend — OAuth-token usage fetch, get_usage command, 60s poller + usage://updated event
-        status: pending
+        status: completed
         complexity: high
         mode: autopilot
         depends_on: []

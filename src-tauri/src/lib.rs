@@ -12,9 +12,17 @@ mod mcp;
 mod models;
 mod pty;
 mod settings;
+mod usage;
 
+use std::time::Duration;
+
+use events::{UsageUpdate, USAGE_UPDATED};
 use pty::SessionRegistry;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+/// Cadence of the background usage poller, in seconds. The first poll fires
+/// immediately on startup; subsequent polls wait this long between refreshes.
+const POLL_INTERVAL_SECS: u64 = 60;
 
 pub fn run() {
     // One registry instance shared by the Tauri commands (managed state) and
@@ -34,6 +42,30 @@ pub fn run() {
                 }
                 Err(e) => eprintln!("failed to start MCP server: {e}"),
             }
+
+            // Background usage poller: capture the AppHandle (the emit target,
+            // same pattern as mcp::start), fetch the Claude subscription usage
+            // snapshot immediately on startup, then refresh every
+            // POLL_INTERVAL_SECS. Each refresh emits USAGE_UPDATED carrying the
+            // snapshot on success or the error string on failure.
+            let usage_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let update = match usage::fetch_snapshot().await {
+                        Ok(snapshot) => UsageUpdate {
+                            snapshot: Some(snapshot),
+                            error: None,
+                        },
+                        Err(error) => UsageUpdate {
+                            snapshot: None,
+                            error: Some(error),
+                        },
+                    };
+                    let _ = usage_handle.emit(USAGE_UPDATED, update);
+                    tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +81,7 @@ pub fn run() {
             pty::kill_session,
             pty::list_sessions,
             commander::commander_send,
+            usage::get_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

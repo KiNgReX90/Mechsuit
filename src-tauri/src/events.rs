@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::usage::UsageSnapshot;
+
 /// Emitted with a chunk of session stdout/stderr output.
 pub const SESSION_OUTPUT: &str = "session://output";
 
@@ -24,6 +26,12 @@ pub const COMMANDER_NAVIGATE: &str = "commander://navigate";
 /// the next mount. Payload is empty (unit). The frontend listens on this name.
 pub const COMMANDER_DIRECTORIES_CHANGED: &str = "commander://directories-changed";
 
+/// Emitted by the background usage poller on each refresh of the Claude
+/// subscription usage limits: immediately on startup, then on a fixed cadence.
+/// Carries a [`UsageUpdate`] — a fresh [`UsageSnapshot`] on success or an error
+/// string on failure. The frontend listens on this exact name.
+pub const USAGE_UPDATED: &str = "usage://updated";
+
 /// Payload for [`SESSION_OUTPUT`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,4 +46,16 @@ pub struct OutputEvent {
 pub struct ExitEvent {
     pub session_id: String,
     pub code: Option<i32>,
+}
+
+/// Payload for [`USAGE_UPDATED`].
+///
+/// Exactly one of `snapshot` / `error` is set: a fresh [`UsageSnapshot`] with
+/// `error` `None` on a successful poll, or `snapshot` `None` with the error
+/// string on a failed one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageUpdate {
+    pub snapshot: Option<UsageSnapshot>,
+    pub error: Option<String>,
 }
