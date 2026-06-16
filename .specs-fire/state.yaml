@@ -276,7 +276,7 @@ intents:
         depends_on: []
       - id: usage-store-countdown
         title: Usage store + format helpers — usageStore, countdown formatter, color-threshold level
-        status: pending
+        status: in_progress
         complexity: low
         mode: autopilot
         depends_on: [usage-ipc-contract]
