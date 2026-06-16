@@ -7,7 +7,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-import type { AppSettings, DirectoryInfo, DiscoveredDir, SessionInfo } from "../types";
+import type { AppSettings, DirectoryInfo, DiscoveredDir, SessionInfo, UsageSnapshot } from "../types";
 import type { CommanderMessage } from "../lib/commander/types";
 
 /** Add a directory to the managed list, returning its resolved info. */
@@ -86,4 +86,12 @@ export function getSettings(): Promise<AppSettings> {
 /** Persist application settings. */
 export function setSettings(settings: AppSettings): Promise<void> {
   return invoke<void>("set_settings", { settings });
+}
+
+/**
+ * Fetch the current usage snapshot from the backend meter. Rejects when the
+ * backend returns an error (e.g. the Anthropic API is unreachable).
+ */
+export function getUsage(): Promise<UsageSnapshot> {
+  return invoke<UsageSnapshot>("get_usage");
 }
