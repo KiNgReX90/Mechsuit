@@ -210,7 +210,7 @@ intents:
         depends_on: []
       - id: settings-store-ipc
         title: Settings IPC + store — types, invoke wrappers, settingsStore
-        status: pending
+        status: completed
         complexity: low
         mode: autopilot
         depends_on: [settings-backend]
