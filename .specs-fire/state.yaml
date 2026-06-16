@@ -257,6 +257,36 @@ intents:
         mode: autopilot
         depends_on: [piper-tts-backend]
 
+  - id: usage-meter
+    title: Usage Meter — Subscription 5-Hour & Weekly Limit Bar
+    status: pending
+    depends_on_intents: [foundation-terminal-grid]
+    work_items:
+      - id: usage-backend
+        title: Usage backend — OAuth-token usage fetch, get_usage command, 60s poller + usage://updated event
+        status: pending
+        complexity: high
+        mode: autopilot
+        depends_on: []
+      - id: usage-ipc-contract
+        title: Usage IPC contract (TS) — types, getUsage wrapper, onUsageUpdated subscriber
+        status: pending
+        complexity: low
+        mode: autopilot
+        depends_on: []
+      - id: usage-store-countdown
+        title: Usage store + format helpers — usageStore, countdown formatter, color-threshold level
+        status: pending
+        complexity: low
+        mode: autopilot
+        depends_on: [usage-ipc-contract]
+      - id: usage-bar-ui
+        title: Usage bar UI — bottom footer component (bars + % + reset + color thresholds), live wiring into App shell
+        status: pending
+        complexity: medium
+        mode: autopilot
+        depends_on: [usage-store-countdown, usage-ipc-contract]
+
 runs:
   active: []
   completed: []
