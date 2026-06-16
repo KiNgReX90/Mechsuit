@@ -270,7 +270,7 @@ intents:
         depends_on: []
       - id: usage-ipc-contract
         title: Usage IPC contract (TS) — types, getUsage wrapper, onUsageUpdated subscriber
-        status: pending
+        status: in_progress
         complexity: low
         mode: autopilot
         depends_on: []
