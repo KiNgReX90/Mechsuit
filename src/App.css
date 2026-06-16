@@ -99,6 +99,7 @@ body {
 .app-shell {
   position: relative;
   display: flex;
+  flex-direction: column;
   height: 100vh;
   font-family: var(--font-sans);
   color: var(--text);
@@ -115,6 +116,17 @@ body {
       transparent 55%
     ),
     var(--bg-base);
+}
+
+/*
+ * The sidebar + workspace row. Takes all vertical space above the slim usage
+ * footer; `min-height: 0` lets the workspace grid scroll instead of pushing the
+ * footer off-screen.
+ */
+.app-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
 }
 
 .sidebar {

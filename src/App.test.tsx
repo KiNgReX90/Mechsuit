@@ -22,6 +22,10 @@ vi.mock("./ipc/commands", () => ({
   resizeSession: vi.fn().mockResolvedValue(undefined),
   killSession: vi.fn().mockResolvedValue(undefined),
   commanderSend: vi.fn().mockResolvedValue({ reply: "", sessionId: "s1" }),
+  // UsageBar (mounted in the shell) primes via getUsage() on mount. A pending
+  // promise keeps the prime from scheduling a post-render store update that
+  // would escape act() in these synchronous shell tests.
+  getUsage: vi.fn(() => new Promise(() => {})),
 }));
 
 // Capture the handlers passed to the commander event subscriptions so tests can
@@ -49,6 +53,8 @@ vi.mock("./ipc/events", () => ({
     directoriesChangedHandler = cb;
     return Promise.resolve(() => {});
   }),
+  // UsageBar (mounted in the shell) subscribes to usage://updated on mount.
+  onUsageUpdated: vi.fn().mockResolvedValue(() => {}),
 }));
 
 describe("App shell", () => {
