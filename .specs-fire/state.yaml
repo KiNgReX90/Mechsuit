@@ -259,7 +259,8 @@ intents:
 
   - id: usage-meter
     title: Usage Meter — Subscription 5-Hour & Weekly Limit Bar
-    status: pending
+    status: completed
+    completed_at: 2026-06-16T15:17:24Z
     depends_on_intents: [foundation-terminal-grid]
     work_items:
       - id: usage-backend
