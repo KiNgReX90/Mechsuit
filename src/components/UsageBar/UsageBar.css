@@ -1,0 +1,86 @@
+/*
+ * Usage footer — a slim, full-width single-line bar pinned to the bottom of the
+ * app shell, below the sidebar + workspace row. Matches the "command deck"
+ * dark theme; level colors reuse the status tokens (green/amber/red).
+ */
+.usage-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 26px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg-base), var(--bg-elev-1));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.usage-bar-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.usage-bar-label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.usage-bar-track {
+  position: relative;
+  display: inline-block;
+  width: 96px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-elev-3);
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--status-ready);
+  transition: width 200ms ease;
+}
+
+.usage-bar-value {
+  min-width: 30px;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-bar-reset {
+  color: var(--text-dim);
+}
+
+/* Threshold colors — applied to both the fill and the value. */
+.usage-bar-window--ok .usage-bar-fill {
+  background: var(--status-ready);
+}
+.usage-bar-window--warn .usage-bar-fill {
+  background: var(--status-awaiting);
+}
+.usage-bar-window--crit .usage-bar-fill {
+  background: var(--status-error);
+}
+
+.usage-bar-window--warn .usage-bar-value {
+  color: var(--status-awaiting);
+}
+.usage-bar-window--crit .usage-bar-value {
+  color: var(--status-error);
+}
+
+.usage-bar-unavailable {
+  color: var(--text-dim);
+  font-style: italic;
+}

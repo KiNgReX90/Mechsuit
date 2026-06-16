@@ -259,7 +259,8 @@ intents:
 
   - id: usage-meter
     title: Usage Meter — Subscription 5-Hour & Weekly Limit Bar
-    status: pending
+    status: completed
+    completed_at: 2026-06-16T15:17:24Z
     depends_on_intents: [foundation-terminal-grid]
     work_items:
       - id: usage-backend
@@ -276,13 +277,13 @@ intents:
         depends_on: []
       - id: usage-store-countdown
         title: Usage store + format helpers — usageStore, countdown formatter, color-threshold level
-        status: in_progress
+        status: completed
         complexity: low
         mode: autopilot
         depends_on: [usage-ipc-contract]
       - id: usage-bar-ui
         title: Usage bar UI — bottom footer component (bars + % + reset + color thresholds), live wiring into App shell
-        status: pending
+        status: completed
         complexity: medium
         mode: autopilot
         depends_on: [usage-store-countdown, usage-ipc-contract]

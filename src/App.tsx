@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 
 import { Commander } from "./components/Commander";
 import { Sidebar } from "./components/Sidebar";
+import { UsageBar } from "./components/UsageBar";
 import { Workspace } from "./components/Workspace";
 import { commanderSend } from "./ipc/commands";
 import { onCommanderDirectoriesChanged, onCommanderNavigate } from "./ipc/events";
@@ -21,6 +22,8 @@ import { useUiStore } from "./state/uiStore";
  *  - `<Commander/>` — chat overlay over the workspace, toggled by Ctrl+Shift+C
  *    and driven by `commanderOpen`. Its engine wraps the `commanderSend` IPC
  *    command. A `commander://navigate` event selects the resolved directory.
+ *  - `<UsageBar/>` — slim full-width footer pinned below the sidebar+workspace
+ *    row; the single owner of the `usage://updated` subscription.
  * Feature items fill the stub components in later rounds.
  */
 function App() {
@@ -95,12 +98,15 @@ function App() {
         onClose={() => setCommanderOpen(false)}
         engine={engine}
       />
-      <aside className="sidebar" aria-label="Directories">
-        <Sidebar />
-      </aside>
-      <main className="workspace" aria-label="Workspace">
-        <Workspace />
-      </main>
+      <div className="app-body">
+        <aside className="sidebar" aria-label="Directories">
+          <Sidebar />
+        </aside>
+        <main className="workspace" aria-label="Workspace">
+          <Workspace />
+        </main>
+      </div>
+      <UsageBar />
     </div>
   );
 }
