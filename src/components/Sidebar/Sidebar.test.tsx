@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as commands from "../../ipc/commands";
 import { useDirectoriesStore } from "../../state/directoriesStore";
 import { useSessionsStore } from "../../state/sessionsStore";
+import { useSettingsStore } from "../../state/settingsStore";
 import { useUiStore } from "../../state/uiStore";
 import type { DirectoryInfo, DiscoveredDir, SessionInfo } from "../../types";
 
@@ -85,6 +86,12 @@ beforeEach(() => {
     selectedDirectoryPath: null,
     focusedSessionId: null,
     expandedSessionId: null,
+  });
+  // Stub the settings store actions so the panel's open-time load() is inert.
+  useSettingsStore.setState({
+    settings: { workspaceRoot: "/home/ruben/dev" },
+    load: vi.fn().mockResolvedValue(undefined),
+    setWorkspaceRoot: vi.fn().mockResolvedValue(undefined),
   });
   mockedCommands.listDirectories.mockResolvedValue([gitDir, plainDir]);
   mockedCommands.removeDirectory.mockResolvedValue(undefined);
@@ -285,6 +292,33 @@ describe("Sidebar", () => {
     expect(mockedCommands.killSession).toHaveBeenCalledTimes(2);
     expect(mockedCommands.killSession).toHaveBeenCalledWith("s1");
     expect(mockedCommands.killSession).toHaveBeenCalledWith("s2");
+  });
+
+  it("opens the settings panel from the gear control and closes it", async () => {
+    render(<Sidebar />);
+    await screen.findByText("repo");
+
+    // Panel is hidden until the gear is activated.
+    expect(
+      screen.queryByRole("dialog", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const panel = await screen.findByRole("dialog", { name: "Settings" });
+    expect(panel).toBeInTheDocument();
+    // Seeded workspace root shows in the field.
+    expect(screen.getByLabelText("Workspace root")).toHaveValue(
+      "/home/ruben/dev",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Settings" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("cancels the remove confirm without killing or removing", async () => {

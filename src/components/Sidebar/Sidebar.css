@@ -35,7 +35,14 @@
   color: var(--text-dim);
 }
 
-.sidebar-add-button {
+.sidebar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sidebar-add-button,
+.sidebar-settings-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -52,14 +59,16 @@
     color 0.15s ease, transform 0.12s ease;
 }
 
-.sidebar-add-button:hover {
+.sidebar-add-button:hover,
+.sidebar-settings-button:hover {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent-hover);
   transform: translateY(-1px);
 }
 
-.sidebar-add-button:active {
+.sidebar-add-button:active,
+.sidebar-settings-button:active {
   transform: translateY(0);
 }
 
