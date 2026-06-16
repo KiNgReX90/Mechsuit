@@ -7,7 +7,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-import type { DirectoryInfo, DiscoveredDir, SessionInfo } from "../types";
+import type { AppSettings, DirectoryInfo, DiscoveredDir, SessionInfo } from "../types";
 import type { CommanderMessage } from "../lib/commander/types";
 
 /** Add a directory to the managed list, returning its resolved info. */
@@ -76,4 +76,14 @@ export function commanderSend(
   sessionId?: string,
 ): Promise<CommanderMessage> {
   return invoke<CommanderMessage>("commander_send", { message, sessionId });
+}
+
+/** Retrieve the persisted application settings. */
+export function getSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("get_settings");
+}
+
+/** Persist application settings. */
+export function setSettings(settings: AppSettings): Promise<void> {
+  return invoke<void>("set_settings", { settings });
 }
