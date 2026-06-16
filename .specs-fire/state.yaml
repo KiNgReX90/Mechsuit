@@ -197,9 +197,9 @@ intents:
 
   - id: settings-workspace-root
     title: Settings Panel — Configurable Workspace Root
-    status: in_progress
+    status: completed
     claimed_at: 2026-06-16T14:24:59Z
-    claimed_by: fire-intent/settings-workspace-root-20260616T142459Z
+    completed_at: 2026-06-16T14:39:26Z
     depends_on_intents: [foundation-terminal-grid]
     work_items:
       - id: settings-backend
@@ -216,7 +216,7 @@ intents:
         depends_on: [settings-backend]
       - id: settings-panel-ui
         title: Settings panel UI — gear control + panel with workspace-root field
-        status: pending
+        status: completed
         complexity: medium
         mode: autopilot
         depends_on: [settings-store-ipc]
