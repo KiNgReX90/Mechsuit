@@ -204,7 +204,7 @@ intents:
     work_items:
       - id: settings-backend
         title: Settings backend — persisted app settings + workspace root default-from-HOME + discover wiring
-        status: pending
+        status: completed
         complexity: medium
         mode: autopilot
         depends_on: []
