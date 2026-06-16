@@ -47,10 +47,6 @@ use crate::events::{COMMANDER_DIRECTORIES_CHANGED, COMMANDER_NAVIGATE};
 use crate::models::{DirectoryInfo, SessionInfo};
 use crate::pty::SessionRegistry;
 
-/// Default discovery root when `discover_projects` is called without `root`:
-/// the user's `~/dev`.
-const DEFAULT_DISCOVER_ROOT: &str = "/home/ruben/dev";
-
 /// Default bounded walk depth when `discover_projects` is called without
 /// `depth`. Matches the directory module's bounded-walk convention.
 const DEFAULT_DISCOVER_DEPTH: usize = 2;
@@ -482,7 +478,7 @@ impl MechsuitServer {
         &self,
         Parameters(DiscoverProjectsParams { root, depth }): Parameters<DiscoverProjectsParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let root = root.unwrap_or_else(|| DEFAULT_DISCOVER_ROOT.to_string());
+        let root = root.unwrap_or_else(crate::settings::default_workspace_root);
         let depth = depth.unwrap_or(DEFAULT_DISCOVER_DEPTH);
         let managed: Vec<String> = self.dirs.directories().into_iter().map(|d| d.path).collect();
         let found: Vec<DiscoveredDir> = crate::directory::discover(&root, depth, &managed);

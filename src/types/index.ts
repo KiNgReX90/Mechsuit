@@ -60,3 +60,8 @@ export interface SessionStatusState {
   /** True once the user has acknowledged a "ready" session; reset to false on each new "ready". */
   acknowledged: boolean;
 }
+
+/** Application settings persisted by the backend. Mirrors the Rust camelCase model. */
+export interface AppSettings {
+  workspaceRoot: string;
+}

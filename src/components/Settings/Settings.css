@@ -1,0 +1,161 @@
+/*
+ * Settings drawer: a glass panel that slides in from the RIGHT edge and
+ * overlaps only the right slice of the app shell, leaving the sidebar and the
+ * rest of the workspace visible. Mirrors the Commander drawer conventions.
+ * Visibility is controlled by the `open` prop (component returns null closed).
+ */
+.settings-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: clamp(340px, 26%, 480px);
+  border-left: 1px solid var(--border-strong);
+  background: linear-gradient(
+    180deg,
+    rgba(20, 26, 40, 0.98),
+    rgba(13, 17, 28, 0.98)
+  );
+  color: var(--text);
+  box-shadow: -22px 0 48px -20px rgba(0, 0, 0, 0.7),
+    inset 1px 0 0 rgba(91, 140, 255, 0.1);
+  overflow: hidden;
+  animation: settings-slide-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes settings-slide-in {
+  from {
+    opacity: 0.3;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(91, 140, 255, 0.1), transparent);
+  flex: 0 0 auto;
+}
+
+.settings-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+}
+
+.settings-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-close:hover {
+  background: var(--bg-elev-3);
+  color: var(--text);
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1rem 0.95rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settings-label {
+  font-weight: 600;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.settings-input {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-1);
+  color: var(--text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-input::placeholder {
+  color: var(--text-dim);
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.settings-save {
+  align-self: flex-start;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.55rem 1.05rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  box-shadow: 0 4px 14px -4px rgba(91, 140, 255, 0.55);
+  transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.settings-save:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.settings-save:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.settings-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: var(--bg-elev-3);
+  color: var(--text-dim);
+  box-shadow: none;
+}

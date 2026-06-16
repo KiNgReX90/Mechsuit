@@ -26,3 +26,14 @@ pub struct SessionInfo {
     pub id: String,
     pub dir_path: String,
 }
+
+/// Persisted application settings.
+///
+/// `workspace_root` is the directory discovery scans when no explicit root is
+/// given. A missing/empty store yields the runtime default (`$HOME/dev`),
+/// derived in [`crate::settings`] rather than hardcoded.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    pub workspace_root: String,
+}

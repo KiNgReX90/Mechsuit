@@ -20,10 +20,6 @@ use tauri::{AppHandle, Manager};
 
 use crate::models::DirectoryInfo;
 
-/// Default discovery root for [`discover_directories`] when the caller omits
-/// one: the user's `~/dev`.
-const DEFAULT_DISCOVER_ROOT: &str = "/home/ruben/dev";
-
 /// Default bounded walk depth for discovery when omitted.
 const DEFAULT_DISCOVER_DEPTH: usize = 2;
 
@@ -57,18 +53,24 @@ pub fn remove_directory(app: AppHandle, path: String) -> Result<(), String> {
     persist::remove(&dir, path)
 }
 
-/// Discover candidate directories under `root` (default `~/dev`) to a bounded
-/// `depth` (default 2), flagging which are already managed. Backs the sidebar's
-/// add-directory combobox so the user can pick a real directory instead of
-/// typing a full path. Reuses the unit-tested [`discover`] walk; the managed
-/// list is read from the same store `list_directories` returns.
+/// Discover candidate directories under `root` to a bounded `depth` (default 2),
+/// flagging which are already managed. When `root` is omitted it resolves to the
+/// configured workspace root (settings), falling back to the runtime `$HOME/dev`
+/// default. Backs the sidebar's add-directory combobox so the user can pick a
+/// real directory instead of typing a full path. Reuses the unit-tested
+/// [`discover`] walk; the managed list is read from the same store
+/// `list_directories` returns.
 #[tauri::command]
 pub fn discover_directories(
     app: AppHandle,
     root: Option<String>,
     depth: Option<usize>,
 ) -> Result<Vec<DiscoveredDir>, String> {
-    let root = root.unwrap_or_else(|| DEFAULT_DISCOVER_ROOT.to_string());
+    let dir = data_dir(&app)?;
+    let root = match root {
+        Some(r) => r,
+        None => crate::settings::resolved_workspace_root(&dir)?,
+    };
     let depth = depth.unwrap_or(DEFAULT_DISCOVER_DEPTH);
     let managed: Vec<String> = list_directories(app)?.into_iter().map(|d| d.path).collect();
     Ok(discover(&root, depth, &managed))

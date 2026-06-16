@@ -11,6 +11,7 @@ mod events;
 mod mcp;
 mod models;
 mod pty;
+mod settings;
 
 use pty::SessionRegistry;
 use tauri::Manager;
@@ -40,6 +41,8 @@ pub fn run() {
             directory::list_directories,
             directory::remove_directory,
             directory::discover_directories,
+            settings::get_settings,
+            settings::set_settings,
             pty::spawn_session,
             pty::write_session,
             pty::resize_session,
