@@ -26,6 +26,27 @@ describe("uiStore", () => {
     expect(state.expandedSessionId).toBeNull();
   });
 
+  it("starts with the Commander overlay open (folded out)", () => {
+    expect(useUiStore.getState().commanderOpen).toBe(true);
+  });
+
+  it("starts with the Settings drawer closed", () => {
+    expect(useUiStore.getState().settingsOpen).toBe(false);
+  });
+
+  it("opens, closes, and toggles the Settings drawer", () => {
+    useUiStore.getState().setSettingsOpen(true);
+    expect(useUiStore.getState().settingsOpen).toBe(true);
+
+    useUiStore.getState().setSettingsOpen(false);
+    expect(useUiStore.getState().settingsOpen).toBe(false);
+
+    useUiStore.getState().toggleSettings();
+    expect(useUiStore.getState().settingsOpen).toBe(true);
+    useUiStore.getState().toggleSettings();
+    expect(useUiStore.getState().settingsOpen).toBe(false);
+  });
+
   it("sets and clears the selected directory path", () => {
     useUiStore.getState().setSelectedDirectoryPath("/home/dev/repo");
     expect(useUiStore.getState().selectedDirectoryPath).toBe("/home/dev/repo");

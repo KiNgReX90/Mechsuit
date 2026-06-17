@@ -1,0 +1,81 @@
+/*
+ * Custom title bar for the borderless window. A slim full-width strip at the
+ * very top of the app shell: brand on the left, window controls on the right.
+ * The strip background is a Tauri drag region; the controls sit above it and
+ * stay clickable. Styling follows the "command deck" tokens in App.css.
+ */
+.title-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  padding-left: 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg-elev-2), var(--bg-elev-1));
+  /* A title bar should never select its own text when dragged/double-clicked. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.title-bar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.title-bar-mark {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.4),
+    0 2px 8px -2px rgba(91, 140, 255, 0.6);
+}
+
+.title-bar-controls {
+  display: flex;
+  align-self: stretch;
+}
+
+.title-bar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.title-bar-button:hover {
+  background: var(--bg-elev-3);
+  color: var(--text);
+}
+
+.title-bar-button:active {
+  background: var(--bg-elev-4);
+}
+
+.title-bar-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent-soft-2);
+}
+
+.title-bar-button--close:hover {
+  background: var(--status-error);
+  color: #fff;
+}
+
+.title-bar-button--close:active {
+  background: #d65a5a;
+}

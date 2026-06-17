@@ -8,7 +8,19 @@ import {
   onSessionExit,
   onSessionOutput,
 } from "./ipc/events";
+import { useSettingsStore } from "./state/settingsStore";
 import { useUiStore } from "./state/uiStore";
+import type { DirectoryInfo } from "./types";
+
+// The TitleBar drives the native window via this wrapper; stub it so the shell
+// renders without a live Tauri window (no __TAURI_INTERNALS__ under jsdom).
+vi.mock("./ipc/window", () => ({
+  minimizeWindow: vi.fn().mockResolvedValue(undefined),
+  toggleMaximizeWindow: vi.fn().mockResolvedValue(undefined),
+  closeWindow: vi.fn().mockResolvedValue(undefined),
+  isWindowMaximized: vi.fn().mockResolvedValue(false),
+  onWindowResized: vi.fn().mockResolvedValue(() => {}),
+}));
 
 vi.mock("./ipc/commands", () => ({
   listDirectories: vi.fn().mockResolvedValue([]),
@@ -66,13 +78,16 @@ describe("App shell", () => {
     useUiStore.setState({
       selectedDirectoryPath: null,
       commanderOpen: false,
+      settingsOpen: false,
     });
   });
 
-  it("renders the sidebar and workspace panes", () => {
+  it("renders the sidebar and workspace panes", async () => {
     render(<App />);
-    expect(screen.getByLabelText("Directories")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workspaces")).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace")).toBeInTheDocument();
+    // Flush the Sidebar's async mount load so its state update lands inside act.
+    await act(async () => {});
   });
 
   it("mounts the status engine once (subscribes to output and exit)", () => {
@@ -81,12 +96,69 @@ describe("App shell", () => {
     expect(onSessionExit).toHaveBeenCalledTimes(1);
   });
 
-  it("hides the Commander overlay initially", () => {
+  it("shows the Commander overlay when open (folded out)", () => {
+    useUiStore.setState({ commanderOpen: true });
     render(<App />);
-    expect(screen.queryByRole("dialog", { name: "Commander" })).toBeNull();
+    expect(
+      screen.getByRole("dialog", { name: "Commander" }),
+    ).toBeInTheDocument();
   });
 
-  it("toggles the Commander overlay with Ctrl+Shift+C", () => {
+  it("mounts the Settings drawer inside .app-body, not the sidebar", async () => {
+    // Regression: the drawer is `position: absolute; right: 0`. Mounted inside
+    // the 260px `.sidebar` it anchored to the sidebar's edge and spilled off the
+    // left of the window. It must resolve against the full-width `.app-body`.
+    useSettingsStore.setState({
+      settings: { workspaceRoot: "/home/ruben/dev" },
+      load: vi.fn().mockResolvedValue(undefined),
+      setWorkspaceRoot: vi.fn().mockResolvedValue(undefined),
+    });
+    useUiStore.setState({ settingsOpen: true });
+    render(<App />);
+
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const appBody = document.querySelector(".app-body");
+    const sidebar = screen.getByLabelText("Workspaces");
+
+    expect(appBody).not.toBeNull();
+    expect(appBody).toContainElement(dialog);
+    expect(sidebar).not.toContainElement(dialog);
+    await act(async () => {});
+  });
+
+  it("auto-selects the most-recently-modified workspace once loaded", async () => {
+    const older: DirectoryInfo = {
+      path: "/home/ruben/dev/older",
+      name: "older",
+      isGitRepo: false,
+      branch: null,
+      lastModified: 100,
+    };
+    const newer: DirectoryInfo = {
+      path: "/home/ruben/dev/newer",
+      name: "newer",
+      isGitRepo: true,
+      branch: "main",
+      lastModified: 999,
+    };
+    vi.mocked(listDirectories).mockResolvedValue([older, newer]);
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(useUiStore.getState().selectedDirectoryPath).toBe(
+        "/home/ruben/dev/newer",
+      ),
+    );
+
+    // Auto-selecting a workspace triggers the Workspace auto-spawn effect; wait
+    // for it to settle so its async state updates flush inside act (no warnings).
+    await waitFor(() =>
+      expect(useUiStore.getState().focusedSessionId).toBe("auto"),
+    );
+  });
+
+  it("toggles the Commander overlay with Ctrl+Shift+C", async () => {
     render(<App />);
     expect(screen.queryByRole("dialog", { name: "Commander" })).toBeNull();
 
@@ -97,6 +169,8 @@ describe("App shell", () => {
 
     fireEvent.keyDown(window, { key: "C", ctrlKey: true, shiftKey: true });
     expect(screen.queryByRole("dialog", { name: "Commander" })).toBeNull();
+    // Flush the Sidebar's async mount load so its state update lands inside act.
+    await act(async () => {});
   });
 
   it("subscribes to commander://navigate and selects the resolved directory", async () => {

@@ -11,6 +11,7 @@ src-tauri/target
 # Editor / OS
 .DS_Store
 *.log
+.env
 
 # Tauri generated (schemas, capabilities)
 src-tauri/gen

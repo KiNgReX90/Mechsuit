@@ -1,0 +1,15 @@
+/*
+ * Inline fallback shown when a wrapped region's render throws. Small and
+ * unobtrusive — it signals the failure without dominating, since the rest of
+ * the app remains usable.
+ */
+.error-boundary {
+  margin: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--status-error);
+  border-radius: var(--radius-sm);
+  background: rgba(247, 109, 109, 0.08);
+  color: var(--status-error);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}

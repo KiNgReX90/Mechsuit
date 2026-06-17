@@ -81,7 +81,7 @@ function Workspace() {
     return (
       <div className="workspace-content workspace-content--empty">
         <ActionBar hasDirectory={false} onAddTerminal={() => {}} />
-        <p className="workspace-empty-hint">Select a directory to begin.</p>
+        <p className="workspace-empty-hint">Select a workspace to begin.</p>
       </div>
     );
   }
