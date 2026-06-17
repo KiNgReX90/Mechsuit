@@ -1,6 +1,6 @@
 import "./App.css";
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Commander } from "./components/Commander";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -9,9 +9,8 @@ import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { UsageBar } from "./components/UsageBar";
 import { Workspace } from "./components/Workspace";
-import { commanderSend } from "./ipc/commands";
-import { onCommanderDirectoriesChanged, onCommanderNavigate } from "./ipc/events";
-import type { CommanderEngine } from "./lib/commander/types";
+import { spawnCommanderSession } from "./ipc/commands";
+import { onCommanderDirectoriesChanged, onCommanderNavigate, onSessionExit } from "./ipc/events";
 import { mostRecentlyModified } from "./lib/recentWorkspace";
 import { useDirectoriesStore } from "./state/directoriesStore";
 import { StatusEngine } from "./state/statusEngine";
@@ -25,9 +24,9 @@ import { useUiStore } from "./state/uiStore";
  *  - `<main>` workspace region — mounts the stub <Workspace/>.
  *  - `<StatusEngine/>` — null-rendering, app-wide status derivation; mounted
  *    once here so it runs regardless of which workspace is shown.
- *  - `<Commander/>` — chat overlay over the workspace, toggled by Ctrl+Shift+C
- *    and driven by `commanderOpen`. Its engine wraps the `commanderSend` IPC
- *    command. A `commander://navigate` event selects the resolved directory.
+ *  - `<Commander/>` — terminal drawer over the workspace, toggled by Ctrl+Shift+C
+ *    and driven by `commanderOpen`. Lazily spawns a Commander PTY session on
+ *    first open; shows a relaunch button when the session exits.
  *  - `<UsageBar/>` — slim full-width footer pinned below the sidebar+workspace
  *    row; the single owner of the `usage://updated` subscription.
  * Feature items fill the stub components in later rounds.
@@ -47,12 +46,53 @@ function App() {
   const directories = useDirectoriesStore((state) => state.directories);
   const loadDirectories = useDirectoriesStore((state) => state.load);
 
-  // The real Commander engine: thin wrapper over the `commanderSend` IPC
-  // command, satisfying the `CommanderEngine` interface the overlay codes to.
-  const engine = useMemo<CommanderEngine>(
-    () => ({ ask: (message, sessionId) => commanderSend(message, sessionId) }),
-    [],
-  );
+  const [commanderSessionId, setCommanderSessionId] = useState<string | null>(null);
+  // Mirror the id into a ref so the exit subscription (registered once) can read
+  // the current id without re-subscribing on every change.
+  const commanderSessionIdRef = useRef<string | null>(null);
+  commanderSessionIdRef.current = commanderSessionId;
+  // True after Commander exits, so the open-effect does not auto-respawn behind
+  // the relaunch button; cleared when the user (or first open) spawns.
+  const commanderExitedRef = useRef(false);
+
+  const openCommander = useCallback(async () => {
+    commanderExitedRef.current = false;
+    try {
+      const info = await spawnCommanderSession();
+      setCommanderSessionId(info.id);
+    } catch {
+      // Spawn failed (e.g. claude not on PATH): leave the drawer on its relaunch
+      // state so the user can retry; never crash the shell.
+      setCommanderSessionId(null);
+      commanderExitedRef.current = true;
+    }
+  }, []);
+
+  // Lazy spawn: the first time the drawer opens with no live session, spawn one.
+  useEffect(() => {
+    if (commanderOpen && commanderSessionId == null && !commanderExitedRef.current) {
+      void openCommander();
+    }
+  }, [commanderOpen, commanderSessionId, openCommander]);
+
+  // Clear the id when the Commander process exits, so the drawer shows relaunch.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onSessionExit(({ sessionId }) => {
+      if (sessionId === commanderSessionIdRef.current) {
+        setCommanderSessionId(null);
+        commanderExitedRef.current = true;
+      }
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // On startup (and any time nothing is selected) land on the most recently
   // modified workspace, so the app opens on live panes instead of an empty
@@ -124,8 +164,12 @@ function App() {
         <ErrorBoundary label="Commander">
           <Commander
             open={commanderOpen}
+            sessionId={commanderSessionId}
             onClose={() => setCommanderOpen(false)}
-            engine={engine}
+            onRelaunch={() => {
+              setCommanderOpen(true);
+              void openCommander();
+            }}
           />
         </ErrorBoundary>
         {/* Settings lives here (not in the Sidebar) so its `right: 0` absolute

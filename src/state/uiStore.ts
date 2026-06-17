@@ -14,7 +14,7 @@ export interface UiState {
   focusedSessionId: string | null;
   /** Id of the session expanded to fill the workspace, or null for the grid. */
   expandedSessionId: string | null;
-  /** Whether the Commander overlay is open. Folded out by default on startup. */
+  /** Whether the Commander drawer is open. Closed by default on startup. */
   commanderOpen: boolean;
   /** Whether the Settings drawer is open. Closed by default. */
   settingsOpen: boolean;
@@ -32,7 +32,7 @@ export const useUiStore = create<UiState>((set) => ({
   selectedDirectoryPath: null,
   focusedSessionId: null,
   expandedSessionId: null,
-  commanderOpen: true,
+  commanderOpen: false,
   settingsOpen: false,
 
   setSelectedDirectoryPath: (path) => set({ selectedDirectoryPath: path }),

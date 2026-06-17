@@ -1,14 +1,16 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { listDirectories } from "./ipc/commands";
+import { listDirectories, spawnCommanderSession } from "./ipc/commands";
 import {
   onCommanderDirectoriesChanged,
   onCommanderNavigate,
   onSessionExit,
   onSessionOutput,
 } from "./ipc/events";
+import { useDirectoriesStore } from "./state/directoriesStore";
 import { useSettingsStore } from "./state/settingsStore";
+import { useSessionsStore } from "./state/sessionsStore";
 import { useUiStore } from "./state/uiStore";
 import type { DirectoryInfo } from "./types";
 
@@ -33,7 +35,9 @@ vi.mock("./ipc/commands", () => ({
   writeSession: vi.fn().mockResolvedValue(undefined),
   resizeSession: vi.fn().mockResolvedValue(undefined),
   killSession: vi.fn().mockResolvedValue(undefined),
-  commanderSend: vi.fn().mockResolvedValue({ reply: "", sessionId: "s1" }),
+  spawnCommanderSession: vi
+    .fn()
+    .mockResolvedValue({ id: "cmd-1", dirPath: "/home/ruben", kind: "commander" }),
   // UsageBar (mounted in the shell) primes via getUsage() on mount. A pending
   // promise keeps the prime from scheduling a post-render store update that
   // would escape act() in these synchronous shell tests.
@@ -44,6 +48,7 @@ vi.mock("./ipc/commands", () => ({
 // fire the events.
 let navigateHandler: ((path: string) => void) | undefined;
 let directoriesChangedHandler: (() => void) | undefined;
+let exitHandler: ((p: { sessionId: string; code: number }) => void) | undefined;
 
 // The real Terminal mounts xterm.js (canvas, unrenderable under jsdom). App
 // shell tests don't exercise terminal internals, so stub it — the auto-spawn
@@ -56,7 +61,10 @@ vi.mock("./components/Terminal", () => ({
 
 vi.mock("./ipc/events", () => ({
   onSessionOutput: vi.fn().mockResolvedValue(() => {}),
-  onSessionExit: vi.fn().mockResolvedValue(() => {}),
+  onSessionExit: vi.fn((cb: (p: { sessionId: string; code: number }) => void) => {
+    exitHandler = cb;
+    return Promise.resolve(() => {});
+  }),
   onCommanderNavigate: vi.fn((cb: (path: string) => void) => {
     navigateHandler = cb;
     return Promise.resolve(() => {});
@@ -74,12 +82,19 @@ describe("App shell", () => {
     vi.clearAllMocks();
     navigateHandler = undefined;
     directoriesChangedHandler = undefined;
-    // Reset shared UI state between tests.
+    exitHandler = undefined;
+    // Restore default mock return values that individual tests may have overridden
+    // (vi.clearAllMocks() clears call records but not implementations).
+    vi.mocked(listDirectories).mockResolvedValue([]);
+    // Reset shared store state between tests so leaked directory/session data
+    // from one test does not trigger auto-spawn effects in subsequent tests.
     useUiStore.setState({
       selectedDirectoryPath: null,
       commanderOpen: false,
       settingsOpen: false,
     });
+    useDirectoriesStore.setState({ directories: [] });
+    useSessionsStore.setState({ sessionsByDirectory: {} });
   });
 
   it("renders the sidebar and workspace panes", async () => {
@@ -93,7 +108,8 @@ describe("App shell", () => {
   it("mounts the status engine once (subscribes to output and exit)", () => {
     render(<App />);
     expect(onSessionOutput).toHaveBeenCalledTimes(1);
-    expect(onSessionExit).toHaveBeenCalledTimes(1);
+    // StatusEngine subscribes once + App's Commander-exit subscription = 2 total.
+    expect(onSessionExit).toHaveBeenCalledTimes(2);
   });
 
   it("shows the Commander overlay when open (folded out)", () => {
@@ -207,5 +223,28 @@ describe("App shell", () => {
         before,
       ),
     );
+  });
+
+  it("spawns the Commander terminal lazily on first open (not on boot)", async () => {
+    render(<App />);
+    expect(spawnCommanderSession).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "C", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(spawnCommanderSession).toHaveBeenCalledTimes(1));
+
+    const term = await screen.findByTestId("terminal-stub");
+    expect(term).toHaveAttribute("data-session-id", "cmd-1");
+  });
+
+  it("shows the relaunch affordance after the Commander session exits", async () => {
+    useUiStore.setState({ commanderOpen: true });
+    render(<App />);
+    await screen.findByTestId("terminal-stub");
+
+    act(() => exitHandler?.({ sessionId: "cmd-1", code: 0 }));
+
+    expect(
+      await screen.findByRole("button", { name: "Relaunch Commander" }),
+    ).toBeInTheDocument();
   });
 });
