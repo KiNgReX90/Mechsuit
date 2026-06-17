@@ -15,6 +15,7 @@ import * as commands from "../../ipc/commands";
 import { useSessionsStore } from "../../state/sessionsStore";
 import { useUiStore } from "../../state/uiStore";
 import { useStatusStore } from "../../state/statusStore";
+import { usePausedStore } from "../../state/pausedStore";
 import type { SessionInfo, SessionStatus } from "../../types";
 
 vi.mock("../../ipc/commands");
@@ -54,6 +55,7 @@ beforeEach(() => {
     expandedSessionId: null,
   });
   useStatusStore.setState({ statusBySession: {} });
+  usePausedStore.setState({ pausedIds: new Set() });
   // Default: no pre-existing sessions on the backend.
   mockedCommands.listSessions.mockResolvedValue([]);
 });
@@ -473,5 +475,22 @@ describe("Workspace", () => {
       expect(expandedTile).toHaveClass("workspace-tile--focused");
       expect(expandedTile).not.toHaveClass("workspace-tile--error");
     });
+  });
+
+  it("marks a paused session's tile and resumes it from the tile control", async () => {
+    seedSessions([session("a"), session("b")]);
+
+    render(<Workspace />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+    );
+
+    act(() => usePausedStore.getState().setPaused("a", true));
+
+    expect(tileFor("a")).toHaveClass("workspace-tile--paused");
+    expect(tileFor("b")).not.toHaveClass("workspace-tile--paused");
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume session a" }));
+    expect(mockedCommands.setSessionPaused).toHaveBeenCalledWith("a", false);
   });
 });

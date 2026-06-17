@@ -91,3 +91,8 @@ export function setSettings(settings: AppSettings): Promise<void> {
 export function getUsage(): Promise<UsageSnapshot> {
   return invoke<UsageSnapshot>("get_usage");
 }
+
+/** Pause (true) or resume (false) a single session by id. */
+export function setSessionPaused(sessionId: string, paused: boolean): Promise<void> {
+  return invoke<void>("set_session_paused", { sessionId, paused });
+}

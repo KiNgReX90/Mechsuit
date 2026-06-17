@@ -21,6 +21,8 @@ import type { SessionInfo } from "../../types";
 import { useSessionsStore } from "../../state/sessionsStore";
 import { useUiStore } from "../../state/uiStore";
 import { useStatusStore } from "../../state/statusStore";
+import { usePausedStore } from "../../state/pausedStore";
+import { setSessionPaused } from "../../ipc/commands";
 
 import { ActionBar } from "./ActionBar";
 import { Grid, tileStatusClass } from "./Grid";
@@ -48,6 +50,7 @@ function Workspace() {
   const removeSession = useSessionsStore((s) => s.removeSession);
 
   const statusBySession = useStatusStore((s) => s.statusBySession);
+  const pausedIds = usePausedStore((s) => s.pausedIds);
 
   // Populate the store for whichever directory is selected. Sessions spawned
   // for other directories remain in the store untouched. If, once loaded, the
@@ -134,30 +137,52 @@ function Workspace() {
       />
 
       {expanded ? (
-        <div
-          className={[
-            "workspace-expanded",
-            // FOCUS WINS: the expanded tile shows the accent border when it is
-            // the focused session, otherwise its status color.
-            expanded === focusedSessionId
-              ? "workspace-tile--focused"
-              : tileStatusClass(statusBySession[expanded]),
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          data-testid="workspace-expanded"
-        >
-          <div className="workspace-tile-header">
-            <SessionActions
-              sessionId={expanded}
-              isExpanded
-              onExpand={setExpandedSessionId}
-              onCollapse={() => setExpandedSessionId(null)}
-              onClose={handleCloseSession}
-            />
-          </div>
-          <Terminal sessionId={expanded} />
-        </div>
+        (() => {
+          const expandedPaused = pausedIds.has(expanded);
+          return (
+            <div
+              className={[
+                "workspace-expanded",
+                // FOCUS WINS: the expanded tile shows the accent border when it is
+                // the focused session, otherwise its status color.
+                expanded === focusedSessionId
+                  ? "workspace-tile--focused"
+                  : tileStatusClass(statusBySession[expanded]),
+                expandedPaused ? "workspace-tile--paused" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              data-testid="workspace-expanded"
+            >
+              <div className="workspace-tile-header">
+                <SessionActions
+                  sessionId={expanded}
+                  isExpanded
+                  onExpand={setExpandedSessionId}
+                  onCollapse={() => setExpandedSessionId(null)}
+                  onClose={handleCloseSession}
+                />
+              </div>
+              {expandedPaused && (
+                <div className="workspace-tile-paused" data-testid="tile-paused">
+                  <span className="workspace-tile-paused-badge">Paused</span>
+                  <button
+                    type="button"
+                    className="workspace-tile-resume"
+                    aria-label={`Resume session ${expanded}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void setSessionPaused(expanded, false);
+                    }}
+                  >
+                    Resume
+                  </button>
+                </div>
+              )}
+              <Terminal sessionId={expanded} />
+            </div>
+          );
+        })()
       ) : (
         <Grid
           sessions={sessions}

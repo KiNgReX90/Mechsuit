@@ -55,3 +55,16 @@ export function onUsageUpdated(
 ): Promise<UnlistenFn> {
   return listen<UsageUpdate>("usage://updated", (event) => cb(event.payload));
 }
+
+/**
+ * Subscribe to `session://paused`; returns an unlisten function. Fired when a
+ * session is OS-suspended/resumed (by Commander or the tile resume control).
+ */
+export function onSessionPaused(
+  cb: (payload: { sessionId: string; paused: boolean }) => void,
+): Promise<UnlistenFn> {
+  return listen<{ sessionId: string; paused: boolean }>(
+    "session://paused",
+    (event) => cb(event.payload),
+  );
+}

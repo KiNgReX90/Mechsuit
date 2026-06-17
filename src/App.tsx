@@ -10,10 +10,12 @@ import { TitleBar } from "./components/TitleBar";
 import { UsageBar } from "./components/UsageBar";
 import { Workspace } from "./components/Workspace";
 import { spawnCommanderSession } from "./ipc/commands";
-import { onCommanderDirectoriesChanged, onCommanderNavigate, onSessionExit } from "./ipc/events";
+import { onCommanderDirectoriesChanged, onCommanderNavigate, onSessionExit, onSessionPaused } from "./ipc/events";
 import { mostRecentlyModified } from "./lib/recentWorkspace";
+import { disposeTerminal } from "./lib/terminalPool";
 import { useDirectoriesStore } from "./state/directoriesStore";
 import { StatusEngine } from "./state/statusEngine";
+import { usePausedStore } from "./state/pausedStore";
 import { useUiStore } from "./state/uiStore";
 
 /**
@@ -32,6 +34,7 @@ import { useUiStore } from "./state/uiStore";
  * Feature items fill the stub components in later rounds.
  */
 function App() {
+  const setPaused = usePausedStore((s) => s.setPaused);
   const commanderOpen = useUiStore((state) => state.commanderOpen);
   const setCommanderOpen = useUiStore((state) => state.setCommanderOpen);
   const toggleCommander = useUiStore((state) => state.toggleCommander);
@@ -83,6 +86,9 @@ function App() {
       if (sessionId === commanderSessionIdRef.current) {
         setCommanderSessionId(null);
         commanderExitedRef.current = true;
+        // The drawer drops the Terminal on exit; tear down its pooled xterm so
+        // it does not outlive the dead session (relaunch spawns a fresh id).
+        disposeTerminal(sessionId);
       }
     }).then((fn) => {
       if (disposed) fn();
@@ -150,6 +156,22 @@ function App() {
       unlisten?.();
     };
   }, [loadDirectories]);
+
+  // Mirror backend SIGSTOP/SIGCONT events into the pausedStore so tiles can dim.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onSessionPaused(({ sessionId, paused }) => setPaused(sessionId, paused)).then(
+      (fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      },
+    );
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [setPaused]);
 
   return (
     <div className="app-shell">

@@ -12,6 +12,8 @@ import { Terminal } from "../Terminal";
 import type { SessionInfo, SessionStatusState } from "../../types";
 import { computeGridLayout } from "../../lib/gridLayout";
 import { useStatusStore } from "../../state/statusStore";
+import { usePausedStore } from "../../state/pausedStore";
+import { setSessionPaused } from "../../ipc/commands";
 import { SessionActions } from "./SessionActions";
 
 /**
@@ -54,6 +56,7 @@ export function Grid({
   onClose,
 }: GridProps) {
   const statusBySession = useStatusStore((s) => s.statusBySession);
+  const pausedIds = usePausedStore((s) => s.pausedIds);
   const { rows } = computeGridLayout(sessions.length);
 
   // Walk the layout rows, slicing sessions into each row in order.
@@ -74,6 +77,7 @@ export function Grid({
         >
           {rowSessions.map((session) => {
             const isFocused = session.id === focusedSessionId;
+            const isPaused = pausedIds.has(session.id);
             // FOCUS WINS: a focused tile shows only the accent border, never a
             // status color; status still lives in the store for other readers.
             const statusClass = isFocused
@@ -83,6 +87,7 @@ export function Grid({
               "workspace-tile",
               isFocused ? "workspace-tile--focused" : null,
               statusClass,
+              isPaused ? "workspace-tile--paused" : null,
             ]
               .filter(Boolean)
               .join(" ");
@@ -111,6 +116,22 @@ export function Grid({
                     onClose={onClose}
                   />
                 </div>
+                {isPaused && (
+                  <div className="workspace-tile-paused" data-testid="tile-paused">
+                    <span className="workspace-tile-paused-badge">Paused</span>
+                    <button
+                      type="button"
+                      className="workspace-tile-resume"
+                      aria-label={`Resume session ${session.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void setSessionPaused(session.id, false);
+                      }}
+                    >
+                      Resume
+                    </button>
+                  </div>
+                )}
                 <Terminal sessionId={session.id} />
               </div>
             );

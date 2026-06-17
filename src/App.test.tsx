@@ -12,6 +12,7 @@ import { useDirectoriesStore } from "./state/directoriesStore";
 import { useSettingsStore } from "./state/settingsStore";
 import { useSessionsStore } from "./state/sessionsStore";
 import { useUiStore } from "./state/uiStore";
+import { disposeTerminal } from "./lib/terminalPool";
 import type { DirectoryInfo } from "./types";
 
 // The TitleBar drives the native window via this wrapper; stub it so the shell
@@ -59,6 +60,12 @@ vi.mock("./components/Terminal", () => ({
   ),
 }));
 
+// The pooled xterm for the Commander session must be torn down when it exits;
+// stub the pool so the test can assert that without touching real xterm.
+vi.mock("./lib/terminalPool", () => ({
+  disposeTerminal: vi.fn(),
+}));
+
 vi.mock("./ipc/events", () => ({
   onSessionOutput: vi.fn().mockResolvedValue(() => {}),
   onSessionExit: vi.fn((cb: (p: { sessionId: string; code: number }) => void) => {
@@ -75,6 +82,7 @@ vi.mock("./ipc/events", () => ({
   }),
   // UsageBar (mounted in the shell) subscribes to usage://updated on mount.
   onUsageUpdated: vi.fn().mockResolvedValue(() => {}),
+  onSessionPaused: vi.fn().mockResolvedValue(() => {}),
 }));
 
 describe("App shell", () => {
@@ -246,5 +254,17 @@ describe("App shell", () => {
     expect(
       await screen.findByRole("button", { name: "Relaunch Commander" }),
     ).toBeInTheDocument();
+  });
+
+  it("disposes the Commander's pooled terminal when its session exits", async () => {
+    useUiStore.setState({ commanderOpen: true });
+    render(<App />);
+    await screen.findByTestId("terminal-stub");
+
+    act(() => exitHandler?.({ sessionId: "cmd-1", code: 0 }));
+
+    // The drawer removes the Terminal on exit; without explicit teardown the
+    // pooled xterm would leak (a fresh id is spawned on relaunch).
+    expect(disposeTerminal).toHaveBeenCalledWith("cmd-1");
   });
 });
