@@ -43,6 +43,17 @@ pub fn run() {
                 Err(e) => eprintln!("failed to start MCP server: {e}"),
             }
 
+            // Maximize on startup. The `maximized` flag in tauri.conf.json is
+            // unreliable on Linux/GTK — it can be evaluated before the window is
+            // realized, leaving the borderless window at its default size with its
+            // left edge tucked under the desktop dock/panel. Maximizing here, once
+            // the window exists, hands the request to the compositor, which sizes
+            // the window to the work area: it fills the screen while leaving the
+            // dock and top bar visible.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.maximize();
+            }
+
             // Background usage poller: capture the AppHandle (the emit target,
             // same pattern as mcp::start), fetch the Claude subscription usage
             // snapshot immediately on startup, then refresh every
