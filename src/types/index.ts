@@ -57,8 +57,20 @@ export type SessionStatus = "working" | "awaiting-approval" | "ready" | "error";
 /** Per-session status record held in statusStore. */
 export interface SessionStatusState {
   status: SessionStatus;
-  /** True once the user has acknowledged a "ready" session; reset to false on each new "ready". */
+  /**
+   * True once the user has acknowledged a "ready" session (focused it). Stays
+   * true across incidental working→ready cycles — only a fresh prompt re-arms
+   * the blink (see {@link promptedSinceAck}), so switching focus or background
+   * redraws never make an already-seen tile blink again.
+   */
   acknowledged: boolean;
+  /**
+   * True when the user has submitted a prompt/command to the session since it
+   * was last acknowledged. The NEXT transition to "ready" consumes this to
+   * re-alert (reset `acknowledged`), so a tile only re-blinks after the user
+   * actually engaged it — not on incidental output.
+   */
+  promptedSinceAck: boolean;
 }
 
 /** Application settings persisted by the backend. Mirrors the Rust camelCase model. */

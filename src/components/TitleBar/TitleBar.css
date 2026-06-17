@@ -1,16 +1,17 @@
 /*
  * Custom title bar for the borderless window. A slim full-width strip at the
- * very top of the app shell: brand on the left, window controls on the right.
- * The strip background is a Tauri drag region; the controls sit above it and
- * stay clickable. Styling follows the "command deck" tokens in App.css.
+ * very top of the app shell: a leading settings gear on the left, the brand
+ * centered, and the window controls on the right. The strip background is a
+ * Tauri drag region; the controls sit above it and stay clickable. Styling
+ * follows the "command deck" tokens in App.css.
  */
 .title-bar {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 34px;
-  padding-left: 0.85rem;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, var(--bg-elev-2), var(--bg-elev-1));
   /* A title bar should never select its own text when dragged/double-clicked. */
@@ -18,7 +19,19 @@
   -webkit-user-select: none;
 }
 
+.title-bar-leading {
+  display: inline-flex;
+  align-self: stretch;
+}
+
+/*
+ * Brand is absolutely centered in the bar so it stays in the middle regardless
+ * of the leading/trailing control widths. It still sits on the drag region.
+ */
 .title-bar-brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -27,6 +40,7 @@
   letter-spacing: 0.1em;
   color: var(--text);
   text-transform: uppercase;
+  pointer-events: none;
 }
 
 .title-bar-mark {

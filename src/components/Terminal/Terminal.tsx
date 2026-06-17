@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 
 import { resizeSession, writeSession } from "../../ipc/commands";
 import { onSessionOutput } from "../../ipc/events";
+import { useStatusStore } from "../../state/statusStore";
 
 export interface TerminalProps {
   /** Session whose PTY this pane reads from and writes to. */
@@ -64,8 +65,15 @@ export function Terminal({ sessionId }: TerminalProps) {
     term.loadAddon(fitAddon);
     term.open(container);
 
-    // Forward user keystrokes to the PTY.
+    // Forward user keystrokes to the PTY. A carriage return means the user
+    // submitted a prompt/command, so arm a re-alert: the session's NEXT ready
+    // transition will blink even if it was already acknowledged. Incidental
+    // input (plain chars mid-typing, terminal focus-tracking escapes on focus
+    // switch) carries no CR, so it never re-arms — switching focus stays quiet.
     const dataDisposable = term.onData((data) => {
+      if (data.includes("\r")) {
+        useStatusStore.getState().markPrompted(sessionId);
+      }
       void writeSession(sessionId, data);
     });
 

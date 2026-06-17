@@ -15,12 +15,25 @@ import { useCallback, useEffect, useState } from "react";
 import { discoverDirectories } from "../../ipc/commands";
 import { selectableCandidates } from "../../lib/discovery";
 import { isStale, relativeTime } from "../../lib/relativeTime";
+import {
+  summarizeSessionStatuses,
+  type StatusBadge,
+} from "../../lib/sessionStatusSummary";
 import { useDirectoriesStore } from "../../state/directoriesStore";
 import { useSessionsStore } from "../../state/sessionsStore";
+import { useStatusStore } from "../../state/statusStore";
 import { useUiStore } from "../../state/uiStore";
-import type { DiscoveredDir } from "../../types";
+import type { DiscoveredDir, SessionStatus } from "../../types";
 
 import "./Sidebar.css";
+
+/** Human-readable label per badged status, used for the badge's accessible name. */
+const STATUS_LABEL: Record<SessionStatus, string> = {
+  ready: "ready",
+  "awaiting-approval": "awaiting approval",
+  error: "error",
+  working: "working",
+};
 
 function Sidebar() {
   const directories = useDirectoriesStore((s) => s.directories);
@@ -31,16 +44,12 @@ function Sidebar() {
   const sessionsByDirectory = useSessionsStore((s) => s.sessionsByDirectory);
   const removeSession = useSessionsStore((s) => s.removeSession);
 
+  const statusBySession = useStatusStore((s) => s.statusBySession);
+
   const selectedDirectoryPath = useUiStore((s) => s.selectedDirectoryPath);
   const setSelectedDirectoryPath = useUiStore(
     (s) => s.setSelectedDirectoryPath,
   );
-  // The Settings drawer's open-state lives in uiStore so App can mount the
-  // drawer in `.app-body` (the full-width positioned container, like Commander).
-  // Mounting it here inside the 260px `.sidebar` made its `right: 0` anchor to
-  // the sidebar's edge, so the drawer spilled off the left of the window.
-  const settingsOpen = useUiStore((s) => s.settingsOpen);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
 
   const [adding, setAdding] = useState(false);
   const [draftPath, setDraftPath] = useState("");
@@ -121,6 +130,12 @@ function Sidebar() {
   /** Active sessions for a directory (empty array when none tracked). */
   const sessionsFor = (path: string) => sessionsByDirectory[path] ?? [];
 
+  /** Status count badges for a directory's tracked sessions. */
+  const badgesFor = (path: string): StatusBadge[] =>
+    summarizeSessionStatuses(
+      sessionsFor(path).map((s) => statusBySession[s.id]?.status),
+    );
+
   /**
    * Remove a directory. With active sessions, open the in-UI confirm; without,
    * remove directly.
@@ -148,28 +163,6 @@ function Sidebar() {
       <div className="sidebar-header">
         <span className="sidebar-title">Workspaces</span>
         <div className="sidebar-header-actions">
-          <button
-            type="button"
-            className="sidebar-settings-button"
-            aria-label="Settings"
-            aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
           <button
             type="button"
             className="sidebar-add-button"
@@ -259,6 +252,8 @@ function Sidebar() {
           const edited = relativeTime(dir.lastModified);
           const stale = isStale(dir.lastModified);
           const sessionCount = sessionsFor(dir.path).length;
+          const badges = badgesFor(dir.path);
+          const hasMeta = Boolean((dir.isGitRepo && dir.branch) || edited);
           const isConfirming = confirmingPath === dir.path;
           return (
             <li key={dir.path} className="sidebar-directory-item">
@@ -273,28 +268,70 @@ function Sidebar() {
                   aria-current={isActive ? "true" : undefined}
                   onClick={() => setSelectedDirectoryPath(dir.path)}
                 >
-                  <span className="sidebar-directory-name">{dir.name}</span>
-                  <span className="sidebar-directory-path">{dir.path}</span>
-                  {dir.isGitRepo && dir.branch && (
-                    <span className="sidebar-directory-branch">
-                      {dir.branch}
-                    </span>
-                  )}
-                  {edited && (
-                    <span
-                      className={
-                        stale
-                          ? "sidebar-directory-edited sidebar-directory-edited--stale"
-                          : "sidebar-directory-edited"
-                      }
-                    >
-                      {stale && (
-                        <span
-                          className="sidebar-directory-stale-dot"
-                          aria-hidden="true"
-                        />
+                  <span className="sidebar-directory-head">
+                    <span className="sidebar-directory-name">{dir.name}</span>
+                    {badges.length > 0 && (
+                      <span className="sidebar-directory-status">
+                        {badges.map((b) => {
+                          const label = `${b.count} ${STATUS_LABEL[b.status]}`;
+                          return (
+                            <span
+                              key={b.status}
+                              className={`sidebar-status-badge sidebar-status-badge--${b.status}`}
+                              aria-label={label}
+                              title={label}
+                            >
+                              {b.count}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </span>
+
+                  {hasMeta && (
+                    <span className="sidebar-directory-meta">
+                      {dir.isGitRepo && dir.branch && (
+                        <span className="sidebar-directory-branch">
+                          {/* Fixed-size branch glyph (never squished by a long
+                              branch name). */}
+                          <svg
+                            viewBox="0 0 16 16"
+                            width="11"
+                            height="11"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <circle cx="4.5" cy="3.5" r="1.7" />
+                            <circle cx="4.5" cy="12.5" r="1.7" />
+                            <circle cx="11.5" cy="3.5" r="1.7" />
+                            <path d="M4.5 5.2v5.6" />
+                            <path d="M11.5 5.2v1c0 2.1-1.7 3.8-3.8 3.8H6" />
+                          </svg>
+                          {dir.branch}
+                        </span>
                       )}
-                      edited {edited}
+                      {edited && (
+                        <span
+                          className={
+                            stale
+                              ? "sidebar-directory-edited sidebar-directory-edited--stale"
+                              : "sidebar-directory-edited"
+                          }
+                        >
+                          {stale && (
+                            <span
+                              className="sidebar-directory-stale-dot"
+                              aria-hidden="true"
+                            />
+                          )}
+                          edited {edited}
+                        </span>
+                      )}
                     </span>
                   )}
                 </button>

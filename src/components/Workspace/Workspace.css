@@ -14,6 +14,7 @@
 .workspace-action-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.55rem 0.7rem;
   border-bottom: 1px solid var(--border);
@@ -49,6 +50,28 @@
 .workspace-action:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Icon-only bar buttons (add-terminal + quick-spawn): square, centered glyph. */
+.workspace-action--add,
+.workspace-action--quick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  line-height: 0;
+}
+
+/*
+ * Quick-spawn options sit slightly recessed from the primary add button so the
+ * "+" reads as the main action and the grid presets as secondary shortcuts.
+ */
+.workspace-action--quick {
+  color: var(--text-dim);
+}
+
+.workspace-action--quick:hover:not(:disabled) {
+  color: var(--accent-hover);
 }
 
 .workspace-empty-hint {
@@ -147,6 +170,17 @@
   50% {
     border-color: var(--border);
   }
+}
+
+/*
+ * Acknowledged ready: the user has already seen this session finish (focused it,
+ * or it completed while focused), so hold a steady green border with no blink —
+ * still legible as "done" at a glance, without the attention-grabbing pulse.
+ */
+.workspace-tile--ready-seen,
+.workspace-expanded.workspace-tile--ready-seen {
+  border-color: var(--status-ready);
+  box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.35);
 }
 
 .workspace-tile-header {

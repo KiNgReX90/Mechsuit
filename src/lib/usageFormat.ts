@@ -5,12 +5,6 @@
  * can be tested deterministically without faking timers.
  */
 
-/** Utilization percentage at or above which the level is "warn". */
-export const WARN_THRESHOLD = 75;
-
-/** Utilization percentage at or above which the level is "crit". */
-export const CRIT_THRESHOLD = 90;
-
 const MS_PER_MINUTE = 60 * 1000;
 const MS_PER_HOUR = 60 * MS_PER_MINUTE;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -45,12 +39,15 @@ export function formatCountdown(
 }
 
 /**
- * Map a utilization percentage (0–100) to a semantic color level.
+ * Map a utilization percentage to a point on a continuous green→red gradient.
  *
- * Boundaries are **inclusive**: `crit` ≥ 90, `warn` ≥ 75, otherwise `ok`.
+ * The hue sweeps linearly from 120° (green) at 0% down to 0° (red) at 100%,
+ * passing through yellow (~60°) and orange (~30°) on the way, so the color
+ * shifts further toward red the closer a window is to its limit. The input is
+ * clamped to 0–100 first. Returns an `hsl(...)` string for use as a CSS value.
  */
-export function usageLevel(utilization: number): "ok" | "warn" | "crit" {
-  if (utilization >= CRIT_THRESHOLD) return "crit";
-  if (utilization >= WARN_THRESHOLD) return "warn";
-  return "ok";
+export function usageColor(utilization: number): string {
+  const clamped = Math.max(0, Math.min(100, utilization));
+  const hue = Math.round(120 - 1.2 * clamped);
+  return `hsl(${hue}, 72%, 50%)`;
 }

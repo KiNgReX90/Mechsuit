@@ -64,6 +64,7 @@ beforeEach(() => {
 });
 
 import { writeSession, resizeSession } from "../../ipc/commands";
+import { useStatusStore } from "../../state/statusStore";
 import { Terminal } from "./Terminal";
 
 afterEach(() => {
@@ -93,6 +94,27 @@ describe("<Terminal />", () => {
     render(<Terminal sessionId="s1" />);
     dataHandler?.("a");
     expect(writeSession).toHaveBeenCalledWith("s1", "a");
+  });
+
+  it("arms a re-alert when the user submits a prompt (carriage return)", () => {
+    useStatusStore.getState().setStatus("s1", "ready");
+    useStatusStore.getState().acknowledge("s1");
+    render(<Terminal sessionId="s1" />);
+
+    dataHandler?.("\r");
+    expect(useStatusStore.getState().statusBySession["s1"].promptedSinceAck).toBe(true);
+  });
+
+  it("does NOT arm a re-alert for input without a carriage return", () => {
+    useStatusStore.getState().setStatus("s1", "ready");
+    useStatusStore.getState().acknowledge("s1");
+    render(<Terminal sessionId="s1" />);
+
+    // Plain characters and a terminal focus-out escape carry no CR, so neither
+    // typing-in-progress nor switching focus should re-arm the blink.
+    dataHandler?.("h");
+    dataHandler?.("\x1b[O");
+    expect(useStatusStore.getState().statusBySession["s1"].promptedSinceAck).toBe(false);
   });
 
   it("unsubscribes and disposes on unmount", async () => {

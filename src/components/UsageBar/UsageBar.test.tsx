@@ -14,7 +14,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as commands from "../../ipc/commands";
-import { formatCountdown } from "../../lib/usageFormat";
+import { formatCountdown, usageColor } from "../../lib/usageFormat";
 import { useUsageStore } from "../../state/usageStore";
 import type { UsageSnapshot } from "../../types";
 
@@ -57,16 +57,20 @@ afterEach(() => {
 });
 
 describe("UsageBar", () => {
-  it("renders both windows with integer %, countdown, and level hooks", async () => {
+  it("renders both windows with integer %, countdown, and gradient color", async () => {
     useUsageStore.setState({ snapshot, error: null, lastUpdated: Date.now() });
     // Prime resolves to the same snapshot, so the seeded render is unchanged.
     mockedCommands.getUsage.mockResolvedValue(snapshot);
 
     await renderSettled(<UsageBar />);
 
-    // Both labels present.
+    // Both labels present, weekly on the left and 5-hour on the right.
     expect(screen.getByText("5h")).toBeInTheDocument();
-    expect(screen.getByText("wk")).toBeInTheDocument();
+    expect(screen.getByText("Weekly")).toBeInTheDocument();
+    const labels = Array.from(
+      document.querySelectorAll(".usage-bar-window .usage-bar-label"),
+    ).map((el) => el.textContent);
+    expect(labels).toEqual(["Weekly", "5h"]);
 
     // Integer percentages.
     expect(screen.getByText("49%")).toBeInTheDocument();
@@ -80,13 +84,17 @@ describe("UsageBar", () => {
       screen.getByText(`· resets ${formatCountdown(SEVEN_DAY_RESET)}`),
     ).toBeInTheDocument();
 
-    // The high-utilization weekly window surfaces a stable "crit" level hook;
-    // the low 5-hour window is "ok".
-    const okWindow = screen.getByText("5h").closest(".usage-bar-window");
-    const critWindow = screen.getByText("wk").closest(".usage-bar-window");
-    expect(okWindow).toHaveAttribute("data-level", "ok");
-    expect(critWindow).toHaveAttribute("data-level", "crit");
-    expect(critWindow).toHaveClass("usage-bar-window--crit");
+    // Each window exposes its position on the green→red gradient as a
+    // `--usage-color` custom property derived from its own utilization, so the
+    // near-limit weekly window reads redder than the low 5-hour window.
+    const lowWindow = screen.getByText("5h").closest(".usage-bar-window");
+    const highWindow = screen.getByText("Weekly").closest(".usage-bar-window");
+    expect((lowWindow as HTMLElement).style.getPropertyValue("--usage-color")).toBe(
+      usageColor(49),
+    );
+    expect(
+      (highWindow as HTMLElement).style.getPropertyValue("--usage-color"),
+    ).toBe(usageColor(96));
   });
 
   it("shows a loading line (not 'unavailable') before the first result", async () => {

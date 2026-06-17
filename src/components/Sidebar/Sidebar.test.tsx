@@ -18,8 +18,14 @@ import * as commands from "../../ipc/commands";
 import { useDirectoriesStore } from "../../state/directoriesStore";
 import { useSessionsStore } from "../../state/sessionsStore";
 import { useSettingsStore } from "../../state/settingsStore";
+import { useStatusStore } from "../../state/statusStore";
 import { useUiStore } from "../../state/uiStore";
-import type { DirectoryInfo, DiscoveredDir, SessionInfo } from "../../types";
+import type {
+  DirectoryInfo,
+  DiscoveredDir,
+  SessionInfo,
+  SessionStatus,
+} from "../../types";
 
 import Sidebar from "./Sidebar";
 
@@ -82,6 +88,7 @@ beforeEach(() => {
   // Reset stores between tests.
   useDirectoriesStore.setState({ directories: [] });
   useSessionsStore.setState({ sessionsByDirectory: {} });
+  useStatusStore.setState({ statusBySession: {} });
   useUiStore.setState({
     selectedDirectoryPath: null,
     focusedSessionId: null,
@@ -111,7 +118,16 @@ describe("Sidebar", () => {
     expect(mockedCommands.listDirectories).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("repo")).toBeInTheDocument();
     expect(screen.getByText("notes")).toBeInTheDocument();
-    expect(screen.getByText("/home/ruben/repo")).toBeInTheDocument();
+  });
+
+  it("does not show each workspace's absolute path (redundant with the root)", async () => {
+    render(<Sidebar />);
+    await screen.findByText("repo");
+
+    // The discovery root is configured once in settings, so the per-workspace
+    // absolute path is dropped to keep the cards uncluttered.
+    expect(screen.queryByText("/home/ruben/repo")).toBeNull();
+    expect(screen.queryByText("/home/ruben/notes")).toBeNull();
   });
 
   it("shows the branch for git repos and hides it for non-git directories", async () => {
@@ -275,6 +291,71 @@ describe("Sidebar", () => {
     expect(staleNodes[0]).toHaveTextContent("edited 30d ago");
   });
 
+  describe("session status badges", () => {
+    const REPO = "/home/ruben/repo";
+
+    /** Seed the repo directory's sessions and their derived statuses. */
+    function seedStatuses(entries: Array<[string, SessionStatus]>) {
+      useSessionsStore.setState({
+        sessionsByDirectory: {
+          [REPO]: entries.map(([id]) => ({ id, dirPath: REPO })),
+        },
+      });
+      useStatusStore.setState({
+        statusBySession: Object.fromEntries(
+          entries.map(([id, status]) => [
+            id,
+            { status, acknowledged: false, promptedSinceAck: false },
+          ]),
+        ),
+      });
+    }
+
+    it("shows a colored count badge per attention-worthy status", async () => {
+      // Four sessions: two ready, one awaiting approval, one error.
+      seedStatuses([
+        ["s1", "ready"],
+        ["s2", "ready"],
+        ["s3", "awaiting-approval"],
+        ["s4", "error"],
+      ]);
+
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      const ready = screen.getByTitle("2 ready");
+      expect(ready).toHaveTextContent("2");
+      expect(ready).toHaveClass("sidebar-status-badge--ready");
+
+      const awaiting = screen.getByTitle("1 awaiting approval");
+      expect(awaiting).toHaveTextContent("1");
+      expect(awaiting).toHaveClass("sidebar-status-badge--awaiting-approval");
+
+      const error = screen.getByTitle("1 error");
+      expect(error).toHaveTextContent("1");
+      expect(error).toHaveClass("sidebar-status-badge--error");
+    });
+
+    it("shows no badges for a workspace with no sessions", async () => {
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      expect(document.querySelector(".sidebar-status-badge")).toBeNull();
+    });
+
+    it("does not badge working sessions (only finished/blocked/broken)", async () => {
+      seedStatuses([
+        ["s1", "working"],
+        ["s2", "working"],
+      ]);
+
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      expect(document.querySelector(".sidebar-status-badge")).toBeNull();
+    });
+  });
+
   it("removes a directory directly when it has no active sessions", async () => {
     render(<Sidebar />);
     await screen.findByText("repo");
@@ -325,21 +406,13 @@ describe("Sidebar", () => {
     expect(mockedCommands.killSession).toHaveBeenCalledWith("s2");
   });
 
-  it("requests the settings drawer via the gear control", async () => {
-    // The drawer itself is mounted by App in `.app-body` (so its `right: 0`
-    // anchors to the full window, not the sidebar). The Sidebar only owns the
-    // gear, which flips the shared uiStore flag App reads.
+  it("does not own a settings control (it lives in the title bar now)", async () => {
+    // Settings moved to the title bar; the sidebar header no longer carries a
+    // gear, only the workspace title and the add-workspace control.
     render(<Sidebar />);
     await screen.findByText("repo");
 
-    const gear = screen.getByRole("button", { name: "Settings" });
-    expect(gear).toHaveAttribute("aria-expanded", "false");
-    expect(useUiStore.getState().settingsOpen).toBe(false);
-
-    fireEvent.click(gear);
-
-    expect(useUiStore.getState().settingsOpen).toBe(true);
-    expect(gear).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
   it("cancels the remove confirm without killing or removing", async () => {

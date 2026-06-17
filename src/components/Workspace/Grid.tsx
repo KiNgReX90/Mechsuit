@@ -16,15 +16,18 @@ import { SessionActions } from "./SessionActions";
 
 /**
  * Map a session's status record to a tile status class. Returns null for the
- * neutral default (no entry, `working`, or acknowledged `ready`). FOCUS WINS:
- * callers must drop this class entirely for the focused tile so it never also
- * carries a status color.
+ * neutral default (no entry or `working`). A `ready` session blinks green until
+ * acknowledged, then settles to a steady (non-blinking) green so it still reads
+ * as done at a glance without nagging. FOCUS WINS: callers must drop this class
+ * entirely for the focused tile so it never also carries a status color.
  */
 export function tileStatusClass(record: SessionStatusState | undefined): string | null {
   if (!record) return null;
   switch (record.status) {
     case "ready":
-      return record.acknowledged ? null : "workspace-tile--ready";
+      return record.acknowledged
+        ? "workspace-tile--ready-seen"
+        : "workspace-tile--ready";
     case "awaiting-approval":
       return "workspace-tile--awaiting-approval";
     case "error":

@@ -6,10 +6,11 @@
  * drives the matching window op, and the middle control reflects/ toggles the
  * maximized state.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as windowIpc from "../../ipc/window";
+import { useUiStore } from "../../state/uiStore";
 
 import { TitleBar } from "./TitleBar";
 
@@ -30,6 +31,7 @@ beforeEach(() => {
   ipc.closeWindow.mockResolvedValue(undefined);
   ipc.isWindowMaximized.mockResolvedValue(false);
   ipc.onWindowResized.mockResolvedValue(() => {});
+  useUiStore.setState({ settingsOpen: false });
 });
 
 describe("TitleBar", () => {
@@ -75,5 +77,18 @@ describe("TitleBar", () => {
   it("subscribes to window resizes to keep the control in sync", async () => {
     render(<TitleBar />);
     await waitFor(() => expect(ipc.onWindowResized).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the settings drawer from the settings control in the bar", async () => {
+    render(<TitleBar />);
+    expect(useUiStore.getState().settingsOpen).toBe(false);
+
+    // Wrap in act + flush so the click's subscribed re-render and the mount's
+    // async maximized-state read both settle inside act (pristine output).
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    });
+
+    expect(useUiStore.getState().settingsOpen).toBe(true);
   });
 });

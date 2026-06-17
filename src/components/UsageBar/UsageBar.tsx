@@ -1,12 +1,14 @@
 /**
  * Bottom footer usage meter.
  *
- * Renders the two rolling-window usage buckets (5-hour + weekly) from the
- * backend meter, each as a slim proportional progress bar, its integer
- * utilization %, and the reset countdown. Bar + value carry a semantic level
- * class (ok/warn/crit) derived from `usageLevel`. When no snapshot is available
- * (or an error is set) it shows a muted "usage unavailable" line instead of
- * bars and never throws.
+ * Renders the two rolling-window usage buckets (weekly on the left, 5-hour on
+ * the right) from the backend meter, each as a slim proportional progress bar,
+ * its integer utilization %, and the reset countdown. Only the bar fill is
+ * tinted — by a continuous green→red gradient (`usageColor`) exposed as the
+ * `--usage-color` custom property, so the fill shifts toward red as a window
+ * nears its limit; the label, %, and countdown stay white. When no snapshot is
+ * available (or an error is set) it shows a muted "usage unavailable" line
+ * instead of bars and never throws.
  *
  * Display state comes entirely from `useUsageStore`, so the component is a pure
  * function of store state (tests drive it by seeding the store). The live data
@@ -15,11 +17,11 @@
  * the subscription down on unmount. This component is the single owner of that
  * subscription.
  */
-import { useEffect } from "react";
+import { type CSSProperties, useEffect } from "react";
 
 import { getUsage } from "../../ipc/commands";
 import { onUsageUpdated } from "../../ipc/events";
-import { formatCountdown, usageLevel } from "../../lib/usageFormat";
+import { formatCountdown, usageColor } from "../../lib/usageFormat";
 import { useUsageStore } from "../../state/usageStore";
 import type { UsageWindow } from "../../types";
 
@@ -34,15 +36,13 @@ function clampWidth(utilization: number): number {
 
 /** A single labelled window: proportional bar + integer % + reset countdown. */
 function Window({ label, window }: { label: string; window: UsageWindow }) {
-  const level = usageLevel(window.utilization);
   const width = clampWidth(window.utilization);
   const pct = Math.round(window.utilization);
+  // Position on the green→red gradient; the bar fill and value both read it.
+  const colorVar = { "--usage-color": usageColor(window.utilization) } as CSSProperties;
 
   return (
-    <div
-      className={`usage-bar-window usage-bar-window--${level}`}
-      data-level={level}
-    >
+    <div className="usage-bar-window" style={colorVar}>
       <span className="usage-bar-label">{label}</span>
       <span className="usage-bar-track" aria-hidden="true">
         <span className="usage-bar-fill" style={{ width: `${width}%` }} />
@@ -90,8 +90,8 @@ function UsageBar() {
         // errors (last-good wins) so the meter never flickers to a failure
         // state on a single missed poll.
         <>
+          <Window label="Weekly" window={snapshot.sevenDay} />
           <Window label="5h" window={snapshot.fiveHour} />
-          <Window label="wk" window={snapshot.sevenDay} />
         </>
       ) : lastUpdated === null ? (
         // Boot: the first fetch is in flight. Not a failure — don't cry wolf.

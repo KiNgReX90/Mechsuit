@@ -18,8 +18,8 @@ describe('computeGridLayout', () => {
       expect(computeGridLayout(1)).toEqual({ rows: [1] });
     });
 
-    it('n = 2 -> [1, 1]', () => {
-      expect(computeGridLayout(2)).toEqual({ rows: [1, 1] });
+    it('n = 2 -> [2] (two panes side by side, not stacked)', () => {
+      expect(computeGridLayout(2)).toEqual({ rows: [2] });
     });
 
     it('n = 3 -> [2, 1]', () => {
@@ -47,26 +47,28 @@ describe('computeGridLayout', () => {
     });
   });
 
-  describe('invariants for n >= 2', () => {
-    const cases = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20];
+  describe('invariants', () => {
+    // n = 2 is special-cased to a single side-by-side row; the two-row grid
+    // begins at n = 3.
+    const twoRowCases = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20];
 
-    it('rows sum to n', () => {
-      for (const n of cases) {
+    it('rows sum to n (including the n=2 single row)', () => {
+      for (const n of [2, ...twoRowCases]) {
         const { rows } = computeGridLayout(n);
         const sum = rows.reduce((a, b) => a + b, 0);
         expect(sum, `sum for n=${n}`).toBe(n);
       }
     });
 
-    it('top row >= bottom row', () => {
-      for (const n of cases) {
+    it('top row >= bottom row for n >= 3', () => {
+      for (const n of twoRowCases) {
         const { rows } = computeGridLayout(n);
         expect(rows[0], `top row for n=${n}`).toBeGreaterThanOrEqual(rows[1]);
       }
     });
 
-    it('exactly two rows for n >= 2', () => {
-      for (const n of cases) {
+    it('exactly two rows for n >= 3', () => {
+      for (const n of twoRowCases) {
         const { rows } = computeGridLayout(n);
         expect(rows.length, `row count for n=${n}`).toBe(2);
       }

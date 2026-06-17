@@ -80,17 +80,29 @@ function Workspace() {
   if (!selectedDirectoryPath) {
     return (
       <div className="workspace-content workspace-content--empty">
-        <ActionBar hasDirectory={false} onAddTerminal={() => {}} />
+        <ActionBar
+          hasDirectory={false}
+          sessionCount={0}
+          onSpawnTerminals={() => {}}
+        />
         <p className="workspace-empty-hint">Select a workspace to begin.</p>
       </div>
     );
   }
 
-  const handleAddTerminal = () => {
+  // Spawn `count` terminals back-to-back (the single add button passes 1; a
+  // quick-spawn option passes however many reach its target). Spawns run
+  // sequentially so the backend creates PTYs one at a time; focus lands on the
+  // last one added.
+  const handleSpawnTerminals = (count: number) => {
+    if (count <= 0) return;
     void (async () => {
-      const info = await addSession(selectedDirectoryPath);
-      // Newly added session takes focus.
-      setFocusedSessionId(info.id);
+      let last: string | null = null;
+      for (let i = 0; i < count; i += 1) {
+        const info = await addSession(selectedDirectoryPath);
+        last = info.id;
+      }
+      if (last) setFocusedSessionId(last);
     })();
   };
 
@@ -115,7 +127,11 @@ function Workspace() {
 
   return (
     <div className="workspace-content">
-      <ActionBar hasDirectory onAddTerminal={handleAddTerminal} />
+      <ActionBar
+        hasDirectory
+        sessionCount={sessions.length}
+        onSpawnTerminals={handleSpawnTerminals}
+      />
 
       {expanded ? (
         <div

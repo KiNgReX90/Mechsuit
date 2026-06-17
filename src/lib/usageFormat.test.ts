@@ -3,12 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  CRIT_THRESHOLD,
-  WARN_THRESHOLD,
-  formatCountdown,
-  usageLevel,
-} from "./usageFormat";
+import { formatCountdown, usageColor } from "./usageFormat";
 
 // Fixed reference: 2024-01-15T12:00:00.000Z in ms
 const NOW = 1_705_320_000_000;
@@ -74,29 +69,38 @@ describe("formatCountdown", () => {
   });
 });
 
-describe("usageLevel", () => {
-  it('returns "ok" below warn threshold', () => {
-    expect(usageLevel(0)).toBe("ok");
-    expect(usageLevel(74)).toBe("ok");
-    expect(usageLevel(WARN_THRESHOLD - 1)).toBe("ok");
+describe("usageColor", () => {
+  // The anchor points define the gradient the spec names: a continuous sweep
+  // green → yellow → orange → red as utilization climbs 0 → 100.
+  it("is green at 0% utilization", () => {
+    expect(usageColor(0)).toBe("hsl(120, 72%, 50%)");
   });
 
-  it('returns "warn" at the warn threshold boundary (inclusive)', () => {
-    expect(usageLevel(WARN_THRESHOLD)).toBe("warn");
+  it("is yellow at the midpoint", () => {
+    expect(usageColor(50)).toBe("hsl(60, 72%, 50%)");
   });
 
-  it('returns "warn" between warn and crit thresholds', () => {
-    expect(usageLevel(75)).toBe("warn");
-    expect(usageLevel(89)).toBe("warn");
-    expect(usageLevel(CRIT_THRESHOLD - 1)).toBe("warn");
+  it("is orange around three-quarters", () => {
+    expect(usageColor(75)).toBe("hsl(30, 72%, 50%)");
   });
 
-  it('returns "crit" at the crit threshold boundary (inclusive)', () => {
-    expect(usageLevel(CRIT_THRESHOLD)).toBe("crit");
+  it("is red at 100% utilization", () => {
+    expect(usageColor(100)).toBe("hsl(0, 72%, 50%)");
   });
 
-  it('returns "crit" above the crit threshold', () => {
-    expect(usageLevel(91)).toBe("crit");
-    expect(usageLevel(100)).toBe("crit");
+  it("clamps out-of-range values to the green/red endpoints", () => {
+    expect(usageColor(-20)).toBe(usageColor(0));
+    expect(usageColor(140)).toBe(usageColor(100));
+  });
+
+  // "the more the percentage increases ... the more towards red": hue must fall
+  // monotonically (120° green → 0° red) across the whole range.
+  it("shifts strictly toward red as utilization rises", () => {
+    const hue = (u: number) => Number(/hsl\((\d+)/.exec(usageColor(u))![1]);
+    for (let u = 0; u < 100; u += 5) {
+      expect(hue(u + 5)).toBeLessThan(hue(u));
+    }
+    expect(hue(0)).toBe(120);
+    expect(hue(100)).toBe(0);
   });
 });

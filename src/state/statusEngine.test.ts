@@ -146,6 +146,80 @@ describe("statusEngine", () => {
     expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
   });
 
+  it("acknowledges a session that becomes ready (idle) while it is focused", async () => {
+    await mountEngine();
+
+    // Focus the session while it is still working — a no-op ack at this point.
+    act(() => useUiStore.getState().setFocusedSessionId(SID));
+    act(() => outputCb!({ sessionId: SID, data: "done\n" }));
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+
+    expect(statusOf(SID)).toBe("ready");
+    // The user was looking at it when it finished, so it is already acknowledged
+    // (it must not blink for completion the user witnessed).
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
+  });
+
+  it("acknowledges a focused session that exits ready (code 0)", async () => {
+    await mountEngine();
+
+    act(() => useUiStore.getState().setFocusedSessionId(SID));
+    act(() => exitCb!({ sessionId: SID, code: 0 }));
+
+    expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
+  });
+
+  it("leaves a freshly-ready session unacknowledged when it is not focused", async () => {
+    await mountEngine();
+
+    // No focus on SID: a background session finishing must still alert (blink).
+    act(() => exitCb!({ sessionId: SID, code: 0 }));
+
+    expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+  });
+
+  it("an acknowledged background session does NOT re-alert on incidental output", async () => {
+    await mountEngine();
+
+    // Session finishes and the user focuses it: acknowledged (steady, no blink).
+    act(() => outputCb!({ sessionId: SID, data: "done\n" }));
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    act(() => useUiStore.getState().setFocusedSessionId(SID));
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
+
+    // User switches focus away, so SID is now a background tile.
+    act(() => useUiStore.getState().setFocusedSessionId("other"));
+
+    // Incidental output (a focus-escape redraw, a live-UI tick) cycles it
+    // working→ready with no new prompt. It must STAY acknowledged — switching
+    // focus around must never make a seen tile blink again.
+    act(() => outputCb!({ sessionId: SID, data: "\x1b[2K" }));
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
+  });
+
+  it("re-alerts a background session on the next ready after a new prompt", async () => {
+    await mountEngine();
+
+    // Finish + acknowledge while focused, then move focus away.
+    act(() => outputCb!({ sessionId: SID, data: "done\n" }));
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    act(() => useUiStore.getState().setFocusedSessionId(SID));
+    act(() => useUiStore.getState().setFocusedSessionId("other"));
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
+
+    // User sends SID a fresh prompt (Terminal reports this), then it works and
+    // finishes in the background: it must blink again to alert.
+    act(() => useStatusStore.getState().markPrompted(SID));
+    act(() => outputCb!({ sessionId: SID, data: "thinking...\n" }));
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+  });
+
   it("focusing a non-ready session is a no-op", async () => {
     await mountEngine();
 

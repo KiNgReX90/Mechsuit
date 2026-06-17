@@ -67,7 +67,7 @@ function seedStatus(
   useStatusStore.setState((state) => ({
     statusBySession: {
       ...state.statusBySession,
-      [sessionId]: { status, acknowledged },
+      [sessionId]: { status, acknowledged, promptedSinceAck: false },
     },
   }));
 }
@@ -146,9 +146,50 @@ describe("Workspace", () => {
     expect(useUiStore.getState().focusedSessionId).toBe("new");
   });
 
+  it("quick-spawn fills the workspace to the chosen terminal count", async () => {
+    // One existing session; clicking "Open 4 terminals" spawns the missing three.
+    mockedCommands.listSessions.mockResolvedValue([session("existing")]);
+    let n = 0;
+    mockedCommands.spawnSession.mockImplementation(async () =>
+      session(`new-${n++}`),
+    );
+
+    render(<Workspace />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workspace-tile")).toHaveLength(1),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open 4 terminals" }));
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workspace-tile")).toHaveLength(4),
+    );
+    expect(mockedCommands.spawnSession).toHaveBeenCalledTimes(3);
+    // Focus lands on the last spawned terminal.
+    expect(useUiStore.getState().focusedSessionId).toBe("new-2");
+  });
+
+  it("hides a quick-spawn option once the workspace already has that many", async () => {
+    seedSessions([session("a"), session("b")]);
+
+    render(<Workspace />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+    );
+
+    // Two terminals open: the "2" target is reached and gone, "4" remains.
+    expect(
+      screen.queryByRole("button", { name: "Open 2 terminals" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open 4 terminals" }),
+    ).toBeInTheDocument();
+  });
+
   describe("layout rows match computeGridLayout", () => {
     const cases: Array<{ n: number; rows: number[] }> = [
       { n: 1, rows: [1] },
+      { n: 2, rows: [2] }, // two panes side by side in a single row
       { n: 4, rows: [2, 2] },
       { n: 5, rows: [3, 2] },
       { n: 9, rows: [5, 4] },
@@ -396,7 +437,7 @@ describe("Workspace", () => {
       expect(tile).not.toHaveClass("workspace-tile--error");
     });
 
-    it("drops the green class once a ready tile is acknowledged", async () => {
+    it("shows a steady (non-blinking) green once a ready tile is acknowledged", async () => {
       seedSessions([session("a")]);
       seedStatus("a", "ready", true);
 
@@ -406,8 +447,10 @@ describe("Workspace", () => {
       );
 
       const tile = tileFor("a");
+      // Acknowledged ready stays green but uses the steady class, not the
+      // blinking one — the user has already seen it finish.
+      expect(tile).toHaveClass("workspace-tile--ready-seen");
       expect(tile).not.toHaveClass("workspace-tile--ready");
-      expect(tile.className).toBe("workspace-tile");
     });
 
     it("applies the status class to the expanded tile", async () => {

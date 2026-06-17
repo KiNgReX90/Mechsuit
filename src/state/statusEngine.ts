@@ -18,6 +18,7 @@ import { useEffect } from "react";
 
 import { onSessionExit, onSessionOutput } from "../ipc/events";
 import { classifyIdle, matchesError } from "../lib/statusParser";
+import type { SessionStatus } from "../types";
 import { useStatusStore } from "./statusStore";
 import { useUiStore } from "./uiStore";
 
@@ -54,6 +55,21 @@ export function useStatusEngine(): void {
       }
     };
 
+    // Write a status, and if it is a *ready* transition on the currently-focused
+    // session, acknowledge it at once: the user is looking at the session as it
+    // finishes, so it must settle to steady green rather than blink for a
+    // completion they already witnessed. A background (non-focused) session that
+    // becomes ready stays unacknowledged so it still blinks to alert.
+    const applyStatus = (sessionId: string, status: SessionStatus) => {
+      useStatusStore.getState().setStatus(sessionId, status);
+      if (
+        status === "ready" &&
+        useUiStore.getState().focusedSessionId === sessionId
+      ) {
+        useStatusStore.getState().acknowledge(sessionId);
+      }
+    };
+
     const handleOutput = (sessionId: string, data: string) => {
       // Append to the bounded trailing buffer (keep only the tail).
       const combined = (trailing.get(sessionId) ?? "") + data;
@@ -67,28 +83,26 @@ export function useStatusEngine(): void {
       // A recognizable error signature wins immediately — no idle wait.
       if (matchesError(data)) {
         clearTimer(sessionId);
-        useStatusStore.getState().setStatus(sessionId, "error");
+        applyStatus(sessionId, "error");
         return;
       }
 
       // Output means the session is working; (re)arm the idle debounce.
-      useStatusStore.getState().setStatus(sessionId, "working");
+      applyStatus(sessionId, "working");
       clearTimer(sessionId);
       timers.set(
         sessionId,
         setTimeout(() => {
           timers.delete(sessionId);
           const tail = trailing.get(sessionId) ?? "";
-          useStatusStore.getState().setStatus(sessionId, classifyIdle(tail));
+          applyStatus(sessionId, classifyIdle(tail));
         }, IDLE_DEBOUNCE_MS),
       );
     };
 
     const handleExit = (sessionId: string, code: number) => {
       clearTimer(sessionId);
-      useStatusStore
-        .getState()
-        .setStatus(sessionId, code === 0 ? "ready" : "error");
+      applyStatus(sessionId, code === 0 ? "ready" : "error");
     };
 
     // Ack a session that gains focus while ready (focusing a non-ready session

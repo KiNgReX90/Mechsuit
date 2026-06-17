@@ -7,6 +7,7 @@ import {
   onWindowResized,
   toggleMaximizeWindow,
 } from "../../ipc/window";
+import { useUiStore } from "../../state/uiStore";
 
 import "./TitleBar.css";
 
@@ -22,6 +23,8 @@ import "./TitleBar.css";
  */
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const toggleSettings = useUiStore((s) => s.toggleSettings);
 
   useEffect(() => {
     let disposed = false;
@@ -47,6 +50,32 @@ export function TitleBar() {
 
   return (
     <header className="title-bar" data-tauri-drag-region>
+      <div className="title-bar-leading">
+        <button
+          type="button"
+          className="title-bar-button title-bar-button--settings"
+          aria-label="Settings"
+          title="Settings"
+          aria-expanded={settingsOpen}
+          onClick={() => toggleSettings()}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="15"
+            height="15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+
       <span className="title-bar-brand" data-tauri-drag-region>
         <span className="title-bar-mark" aria-hidden="true" />
         Mechsuit
