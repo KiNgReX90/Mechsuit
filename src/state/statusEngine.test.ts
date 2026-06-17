@@ -134,10 +134,12 @@ describe("statusEngine", () => {
     expect(statusOf(SID)).toBe("error");
   });
 
-  it("acknowledges a ready session when it gains focus", async () => {
+  it("acknowledges a blinking (prompted) ready session when it gains focus", async () => {
     await mountEngine();
 
-    act(() => outputCb!({ sessionId: SID, data: "done\n" }));
+    // The user prompted SID, so its completion blinks to alert (unacknowledged).
+    act(() => outputCb!({ sessionId: SID, data: "thinking...\n" }));
+    act(() => useStatusStore.getState().markPrompted(SID));
     act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
     expect(statusOf(SID)).toBe("ready");
     expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
@@ -170,14 +172,16 @@ describe("statusEngine", () => {
     expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
   });
 
-  it("leaves a freshly-ready session unacknowledged when it is not focused", async () => {
+  it("leaves a freshly-ready UNPROMPTED session acknowledged (no blink) even when not focused", async () => {
     await mountEngine();
 
-    // No focus on SID: a background session finishing must still alert (blink).
+    // No prompt was ever submitted: a session that simply finished starting up
+    // must NOT blink, even unfocused. Blinking is reserved for a completion the
+    // user actually asked for (covered by the prompted re-alert test below).
     act(() => exitCb!({ sessionId: SID, code: 0 }));
 
     expect(statusOf(SID)).toBe("ready");
-    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
   });
 
   it("an acknowledged background session does NOT re-alert on incidental output", async () => {
@@ -225,9 +229,13 @@ describe("statusEngine", () => {
 
     act(() => outputCb!({ sessionId: SID, data: "still working\n" }));
     expect(statusOf(SID)).toBe("working");
+    const before = useStatusStore.getState().statusBySession[SID]?.acknowledged;
 
+    // Focusing a working session must not change its status or acknowledged flag
+    // — there is nothing ready to acknowledge.
     act(() => useUiStore.getState().setFocusedSessionId(SID));
-    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+    expect(statusOf(SID)).toBe("working");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(before);
   });
 
   it("tears down both subscriptions and the focus subscription on unmount", async () => {
@@ -236,8 +244,13 @@ describe("statusEngine", () => {
     expect(outputUnlisten).toHaveBeenCalledTimes(1);
     expect(exitUnlisten).toHaveBeenCalledTimes(1);
 
-    // After unmount, focus changes must no longer acknowledge.
+    // After unmount, focus changes must no longer acknowledge. Arm a blinking
+    // (prompted) ready so an acknowledgement would be observable if the focus
+    // subscription were still live — it must stay unacknowledged.
+    useStatusStore.getState().setStatus(SID, "working");
+    useStatusStore.getState().markPrompted(SID);
     useStatusStore.getState().setStatus(SID, "ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
     act(() => useUiStore.getState().setFocusedSessionId(SID));
     expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
   });

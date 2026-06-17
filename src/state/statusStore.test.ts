@@ -27,7 +27,22 @@ describe("statusStore", () => {
       expect(useStatusStore.getState().statusBySession["session-1"].status).toBe("error");
     });
 
-    it("leaves the first-ever ready unacknowledged so it blinks once", () => {
+    it("leaves the first-ever ready ACKNOWLEDGED (no blink) when no prompt was submitted", () => {
+      // A freshly-opened session prints its startup banner and settles to ready
+      // without the user ever prompting it. That MUST NOT blink — blinking is an
+      // alert reserved for a completion the user asked for (see markPrompted).
+      useStatusStore.getState().setStatus("session-1", "working");
+      useStatusStore.getState().setStatus("session-1", "ready");
+      expect(useStatusStore.getState().statusBySession["session-1"].acknowledged).toBe(true);
+    });
+
+    it("blinks (acknowledged=false) on the first ready that follows a submitted prompt", () => {
+      // Startup settles quietly (acknowledged, no blink)...
+      useStatusStore.getState().setStatus("session-1", "working");
+      useStatusStore.getState().setStatus("session-1", "ready");
+      // ...then the user submits a prompt; the next ready is a real completion.
+      useStatusStore.getState().markPrompted("session-1");
+      useStatusStore.getState().setStatus("session-1", "working");
       useStatusStore.getState().setStatus("session-1", "ready");
       expect(useStatusStore.getState().statusBySession["session-1"].acknowledged).toBe(false);
     });

@@ -18,8 +18,10 @@ export interface StatusStoreState {
    * `acknowledged` to false) ONLY when a prompt was submitted since the last
    * acknowledgement (`promptedSinceAck`); otherwise an already-seen session
    * keeps its acknowledged state, so incidental output (focus-escape redraws,
-   * live-UI ticks) never makes it blink again. A brand-new session's first
-   * ready is unacknowledged, so it still blinks once.
+   * live-UI ticks) never makes it blink again. A brand-new session defaults to
+   * acknowledged, so its first ready (a startup the user never prompted) is
+   * steady, not blinking — blinking is reserved for a completion the user asked
+   * for via {@link markPrompted}.
    */
   setStatus: (sessionId: string, status: SessionStatus) => void;
 
@@ -50,13 +52,16 @@ export const useStatusStore = create<StatusStoreState>((set, get) => ({
 
   setStatus: (sessionId, status) => {
     const existing = get().statusBySession[sessionId];
-    // Re-alert (drop acknowledged) only when a fresh prompt is outstanding; a
-    // ready without one keeps the prior acknowledged (a brand-new session has
-    // none, so its first ready stays unacknowledged → blinks once). Reaching
-    // ready consumes the prompt so a second incidental cycle won't re-alert.
+    // Blinking is armed EXCLUSIVELY by a submitted prompt: a ready re-alerts
+    // (drops acknowledged) only when a fresh prompt is outstanding. Otherwise it
+    // keeps the prior acknowledged, which DEFAULTS TO TRUE for a never-seen
+    // session — so a freshly-opened session's first ready settles to steady
+    // (no blink) rather than nagging about a startup the user never asked for.
+    // Reaching ready consumes the prompt so a second incidental cycle won't
+    // re-alert. An already-blinking session keeps its false until acknowledged.
     const prompted = existing?.promptedSinceAck ?? false;
     const acknowledged =
-      status === "ready" ? (prompted ? false : (existing?.acknowledged ?? false)) : (existing?.acknowledged ?? false);
+      status === "ready" ? (prompted ? false : (existing?.acknowledged ?? true)) : (existing?.acknowledged ?? true);
     const promptedSinceAck = status === "ready" ? false : prompted;
     set((state) => ({
       statusBySession: {

@@ -63,10 +63,12 @@ export type SessionStatus = "working" | "awaiting-approval" | "ready" | "error";
 export interface SessionStatusState {
   status: SessionStatus;
   /**
-   * True once the user has acknowledged a "ready" session (focused it). Stays
-   * true across incidental working→ready cycles — only a fresh prompt re-arms
-   * the blink (see {@link promptedSinceAck}), so switching focus or background
-   * redraws never make an already-seen tile blink again.
+   * Whether the session's "ready" state needs no alert. Defaults to true for a
+   * brand-new session, so a freshly-opened session that just finished starting
+   * up is steady, not blinking. Goes false (blink) only when a "ready" follows a
+   * submitted prompt (see {@link promptedSinceAck}); the user clears it by
+   * focusing the tile. Stays true across incidental working→ready cycles, so
+   * switching focus or background redraws never make a seen tile blink again.
    */
   acknowledged: boolean;
   /**

@@ -59,7 +59,8 @@ export function useStatusEngine(): void {
     // session, acknowledge it at once: the user is looking at the session as it
     // finishes, so it must settle to steady green rather than blink for a
     // completion they already witnessed. A background (non-focused) session that
-    // becomes ready stays unacknowledged so it still blinks to alert.
+    // becomes ready blinks to alert only when the store armed it via a submitted
+    // prompt; an unprompted startup settles steady (see statusStore.setStatus).
     const applyStatus = (sessionId: string, status: SessionStatus) => {
       useStatusStore.getState().setStatus(sessionId, status);
       if (
