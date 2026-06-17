@@ -118,4 +118,55 @@ describe("<Commander />", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Commander" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("folds in (onClose) when the pointer goes down outside the drawer", () => {
+    const onClose = vi.fn();
+    render(
+      <div>
+        <button type="button">outside</button>
+        <Commander open onClose={onClose} engine={makeEngine([])} />
+      </div>,
+    );
+
+    fireEvent.mouseDown(screen.getByText("outside"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays open when the pointer goes down inside the drawer", () => {
+    const onClose = vi.fn();
+    render(<Commander open onClose={onClose} engine={makeEngine([])} />);
+
+    fireEvent.mouseDown(screen.getByLabelText("Message Commander"));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("shows an error and clears pending when the engine rejects", async () => {
+    const engine: CommanderEngine = {
+      ask: vi.fn(() => Promise.reject(new Error("offline"))),
+    };
+    render(<Commander open onClose={() => {}} engine={engine} />);
+
+    send("hello");
+
+    // The failed turn surfaces an alert and the pending indicator clears —
+    // the conversation degrades gracefully instead of silently dying.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/couldn't reach Commander/i);
+    expect(screen.queryByTestId("commander-pending")).not.toBeInTheDocument();
+    // The input is usable again so the user can retry.
+    expect(screen.getByLabelText("Message Commander")).not.toBeDisabled();
+  });
+
+  it("ignores outside pointer-downs while closed", () => {
+    const onClose = vi.fn();
+    render(
+      <div>
+        <button type="button">outside</button>
+        <Commander open={false} onClose={onClose} engine={makeEngine([])} />
+      </div>,
+    );
+
+    fireEvent.mouseDown(screen.getByText("outside"));
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

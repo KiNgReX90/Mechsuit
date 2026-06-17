@@ -38,7 +38,9 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
 
   // Put the cursor straight in the message field whenever the overlay opens
   // (e.g. via the Ctrl+Shift+C hotkey), so the user can type immediately
@@ -46,6 +48,23 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+
+  // Fold the drawer in when the pointer goes down anywhere outside it (e.g.
+  // clicking into a terminal or the sidebar). Pointer-down — not focus loss —
+  // is the trigger, so a programmatic focus change (a freshly spawned terminal
+  // grabbing focus) never collapses a drawer the user just opened. Ctrl+Shift+C
+  // and the close control remain the explicit toggles.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const drawer = drawerRef.current;
+      if (drawer && !drawer.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -56,6 +75,7 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
 
     setTurns((prev) => [...prev, { role: "user", text: message }]);
     setInput("");
+    setError(null);
     setPending(true);
 
     void (async () => {
@@ -63,6 +83,13 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
         const result = await engine.ask(message, sessionId);
         setSessionId(result.sessionId);
         setTurns((prev) => [...prev, { role: "assistant", text: result.reply }]);
+      } catch {
+        // The driver/network failed (e.g. offline). Surface it inline and clear
+        // pending so the conversation degrades gracefully instead of silently
+        // dying — and the rest of the app is untouched.
+        setError(
+          "Couldn't reach Commander. Check your connection and try again.",
+        );
       } finally {
         setPending(false);
       }
@@ -70,7 +97,12 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
   };
 
   return (
-    <aside className="commander-drawer" role="dialog" aria-label="Commander">
+    <aside
+      ref={drawerRef}
+      className="commander-drawer"
+      role="dialog"
+      aria-label="Commander"
+    >
       <div className="commander-header">
         <span className="commander-title">
           <CommanderEmblem />
@@ -109,6 +141,11 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
             <span />
             <span />
             <span />
+          </div>
+        )}
+        {error && (
+          <div className="commander-error" role="alert">
+            {error}
           </div>
         )}
       </div>

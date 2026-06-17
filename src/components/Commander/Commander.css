@@ -166,6 +166,18 @@
   color: var(--accent-hover);
 }
 
+/* Inline error bubble shown when a turn fails (e.g. offline / driver error). */
+.commander-error {
+  align-self: stretch;
+  padding: 0.55rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid var(--status-error);
+  background: rgba(247, 109, 109, 0.1);
+  color: var(--status-error);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 /* Empty-state hint shown before the first message. */
 .commander-empty {
   margin: auto 0.4rem;
