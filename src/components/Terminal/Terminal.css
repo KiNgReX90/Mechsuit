@@ -1,8 +1,15 @@
-/* Terminal pane fills its grid cell; xterm renders into this container. */
+/* Terminal pane fills its grid cell; the pooled xterm surface is attached here. */
 .terminal-pane {
   width: 100%;
   height: 100%;
   overflow: hidden;
   padding: 4px 6px;
   background: #0a0d13;
+}
+
+/* The pool-owned element xterm renders into. It is re-parented across workspace
+   switches, so it must fill whichever .terminal-pane currently hosts it. */
+.terminal-pane-surface {
+  width: 100%;
+  height: 100%;
 }

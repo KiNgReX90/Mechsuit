@@ -9,6 +9,7 @@
 import { create } from "zustand";
 
 import { killSession, listSessions, spawnSession } from "../ipc/commands";
+import { disposeTerminal } from "../lib/terminalPool";
 import type { SessionInfo } from "../types";
 
 export interface SessionsState {
@@ -16,8 +17,11 @@ export interface SessionsState {
   sessionsByDirectory: Record<string, SessionInfo[]>;
 
   /**
-   * Populate the given directory's sessions from `listSessions` (filtered to
-   * that directory). Other directories' sessions are left untouched.
+   * Reconcile the given directory's sessions against `listSessions` (filtered to
+   * that directory) WITHOUT reordering the tiles the user already sees. The
+   * backend lists sessions in `HashMap` iteration order, which reshuffles on any
+   * spawn/exit, so `loadDirectory` re-reads it on every switch; preserving the
+   * known order keeps tiles put. Other directories' sessions are untouched.
    */
   loadDirectory: (dirPath: string) => Promise<void>;
 
@@ -42,12 +46,29 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   loadDirectory: async (dirPath) => {
     const all = await listSessions();
     const forDir = all.filter((s) => s.dirPath === dirPath && s.kind !== "commander");
-    set((state) => ({
-      sessionsByDirectory: {
-        ...state.sessionsByDirectory,
-        [dirPath]: forDir,
-      },
-    }));
+    set((state) => {
+      const prev = state.sessionsByDirectory[dirPath] ?? [];
+      const byId = new Map(forDir.map((s) => [s.id, s]));
+      // Keep already-shown sessions in their existing slots (dropping any that
+      // vanished), then append newly-discovered ones in a stable order so the
+      // first sighting of a session is deterministic regardless of backend
+      // iteration order.
+      const ordered: SessionInfo[] = [];
+      for (const known of prev) {
+        const current = byId.get(known.id);
+        if (current) {
+          ordered.push(current);
+          byId.delete(known.id);
+        }
+      }
+      const fresh = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+      return {
+        sessionsByDirectory: {
+          ...state.sessionsByDirectory,
+          [dirPath]: [...ordered, ...fresh],
+        },
+      };
+    });
   },
 
   addSession: async (dirPath) => {
@@ -64,6 +85,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 
   removeSession: async (dirPath, sessionId) => {
     await killSession(sessionId);
+    // The session is gone for good — tear down its pooled xterm instance (kept
+    // alive across workspace switches) so it does not leak.
+    disposeTerminal(sessionId);
     const existing = get().sessionsByDirectory[dirPath] ?? [];
     set((state) => ({
       sessionsByDirectory: {

@@ -65,12 +65,16 @@ beforeEach(() => {
 
 import { writeSession, resizeSession } from "../../ipc/commands";
 import { useStatusStore } from "../../state/statusStore";
+import { disposeTerminal } from "../../lib/terminalPool";
 import { Terminal } from "./Terminal";
 
 afterEach(() => {
   // Unmount any still-mounted tree (running component cleanup) BEFORE clearing
   // mocks, so leftover cleanup calls don't leak into the next test's counts.
   cleanup();
+  // The pool keeps the instance alive across unmount; dispose it so each test
+  // starts from a freshly-built terminal (new subscription + onData handler).
+  disposeTerminal("s1");
   vi.clearAllMocks();
   outputCb = undefined;
   dataHandler = undefined;
@@ -117,14 +121,22 @@ describe("<Terminal />", () => {
     expect(useStatusStore.getState().statusBySession["s1"].promptedSinceAck).toBe(false);
   });
 
-  it("unsubscribes and disposes on unmount", async () => {
+  it("keeps the terminal alive on unmount and tears it down only on disposeTerminal", async () => {
     const { unmount } = render(<Terminal sessionId="s1" />);
     // Flush microtasks so the onSessionOutput promise resolves and the
     // unlisten fn is stored before we tear the component down.
     await Promise.resolve();
     unmount();
+    // Switching workspaces unmounts the pane but MUST NOT destroy it — the
+    // xterm instance and its subscription stay live so it re-shows instantly.
+    expect(disposeSpy).not.toHaveBeenCalled();
+    expect(unlisten).not.toHaveBeenCalled();
+    expect(onDataDisposeSpy).not.toHaveBeenCalled();
+
+    // Closing the session for good is the only thing that tears it down.
+    disposeTerminal("s1");
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
     expect(unlisten).toHaveBeenCalledTimes(1);
     expect(onDataDisposeSpy).toHaveBeenCalledTimes(1);
-    expect(disposeSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,8 +13,14 @@ import type { SessionInfo, SessionStatusState } from "../../types";
 import { computeGridLayout } from "../../lib/gridLayout";
 import { useStatusStore } from "../../state/statusStore";
 import { usePausedStore } from "../../state/pausedStore";
-import { setSessionPaused } from "../../ipc/commands";
+import { setSessionPaused, writeSession } from "../../ipc/commands";
 import { SessionActions } from "./SessionActions";
+
+// Ctrl+L (form feed, 0x0C). Sent to a session's PTY when you switch INTO it so
+// the running program (shell / Claude Code) clears its screen — a clean view on
+// every focus change. It carries no carriage return, so it reads as incidental
+// input and never re-arms the pool's prompt re-alert.
+const CLEAR_SCREEN = "\f";
 
 /**
  * Map a session's status record to a tile status class. Returns null for the
@@ -98,7 +104,17 @@ export function Grid({
                 data-session-id={session.id}
                 data-focused={isFocused ? "true" : "false"}
                 key={session.id}
-                onClick={() => onFocus(session.id)}
+                onClick={() => {
+                  // Switching INTO an unfocused, live tile clears its screen
+                  // (Ctrl+L). Re-clicking the focused tile is a no-op so cursor
+                  // placement / text selection still work; a paused tile is
+                  // SIGSTOPped, so a clear would only queue to wipe its frozen
+                  // screen on resume.
+                  if (!isFocused && !isPaused) {
+                    void writeSession(session.id, CLEAR_SCREEN);
+                  }
+                  onFocus(session.id);
+                }}
                 // Only the focused tile forwards keystrokes to its Terminal;
                 // others stop input at the capture phase before it reaches xterm.
                 onKeyDownCapture={(e) => {

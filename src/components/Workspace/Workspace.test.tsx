@@ -233,6 +233,42 @@ describe("Workspace", () => {
     expect(tileB).toHaveAttribute("data-focused", "true");
   });
 
+  it("clicking a non-focused tile sends Ctrl+L (clear screen) to its session", async () => {
+    seedSessions([session("a"), session("b")]);
+
+    render(<Workspace />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+    );
+
+    const tileB = screen
+      .getAllByTestId("workspace-tile")
+      .find((t) => t.getAttribute("data-session-id") === "b")!;
+    fireEvent.click(tileB);
+
+    // "\f" (0x0C) is the Ctrl+L form-feed byte: switching INTO a terminal
+    // clears its screen.
+    expect(mockedCommands.writeSession).toHaveBeenCalledWith("b", "\f");
+  });
+
+  it("clicking the already-focused tile does not re-send Ctrl+L", async () => {
+    seedSessions([session("a"), session("b")]);
+    useUiStore.setState({ focusedSessionId: "b", expandedSessionId: null });
+
+    render(<Workspace />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+    );
+
+    const tileB = screen
+      .getAllByTestId("workspace-tile")
+      .find((t) => t.getAttribute("data-session-id") === "b")!;
+    fireEvent.click(tileB);
+
+    // It is already focused — no focus switch, so no clear.
+    expect(mockedCommands.writeSession).not.toHaveBeenCalledWith("b", "\f");
+  });
+
   it("expanding a tile fills the workspace and collapsing returns to the grid", async () => {
     seedSessions([session("a"), session("b")]);
 
