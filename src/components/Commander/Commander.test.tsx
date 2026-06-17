@@ -1,27 +1,15 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CommanderEngine, CommanderMessage } from "../../lib/commander/types";
 import { Commander } from "./Commander";
 
-// A mock engine whose replies the test controls. ask() is a spy so we can
-// assert the message + sessionId threaded into each call.
-function makeEngine(replies: CommanderMessage[]): CommanderEngine {
-  let turn = 0;
-  return {
-    ask: vi.fn((_message: string, _sessionId?: string) =>
-      Promise.resolve(replies[turn++]),
-    ),
-  };
-}
-
-// Type into the message field and submit the form.
-function send(text: string) {
-  fireEvent.change(screen.getByLabelText("Message Commander"), {
-    target: { value: text },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
-}
+// Stub the Terminal so we assert wiring (which session id is mounted) without
+// xterm/canvas in jsdom.
+vi.mock("../Terminal", () => ({
+  Terminal: ({ sessionId }: { sessionId: string }) => (
+    <div data-testid="commander-terminal" data-session-id={sessionId} />
+  ),
+}));
 
 afterEach(() => {
   cleanup();
@@ -29,92 +17,52 @@ afterEach(() => {
 });
 
 describe("<Commander />", () => {
-  it("renders nothing when closed", () => {
+  it("renders nothing when closed and never opened (no session)", () => {
     const { container } = render(
-      <Commander open={false} onClose={() => {}} engine={makeEngine([])} />,
+      <Commander open={false} sessionId={null} onClose={() => {}} onRelaunch={() => {}} />,
     );
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("submits input, calls engine.ask, and renders the reply as markdown", async () => {
-    const engine = makeEngine([{ reply: "**bold reply**", sessionId: "c1" }]);
-    render(<Commander open onClose={() => {}} engine={engine} />);
-
-    send("hello");
-
-    // User message rendered plain.
-    expect(screen.getByText("hello")).toBeInTheDocument();
-    // First turn carries no sessionId.
-    expect(engine.ask).toHaveBeenCalledWith("hello", undefined);
-
-    // Assistant reply rendered through react-markdown: **bold** -> <strong>.
-    const strong = await screen.findByText("bold reply");
-    expect(strong.tagName).toBe("STRONG");
-  });
-
-  it("threads the returned sessionId into the next ask call", async () => {
-    const engine = makeEngine([
-      { reply: "first", sessionId: "sess-42" },
-      { reply: "second", sessionId: "sess-42" },
-    ]);
-    render(<Commander open onClose={() => {}} engine={engine} />);
-
-    send("one");
-    await screen.findByText("first");
-
-    send("two");
-    await screen.findByText("second");
-
-    expect(engine.ask).toHaveBeenNthCalledWith(1, "one", undefined);
-    expect(engine.ask).toHaveBeenNthCalledWith(2, "two", "sess-42");
-  });
-
-  it("shows a pending indicator while a reply is in flight and clears it on resolve", async () => {
-    let resolve: (m: CommanderMessage) => void = () => {};
-    const engine: CommanderEngine = {
-      ask: vi.fn(
-        () =>
-          new Promise<CommanderMessage>((r) => {
-            resolve = r;
-          }),
-      ),
-    };
-    render(<Commander open onClose={() => {}} engine={engine} />);
-
-    send("wait");
-    expect(screen.getByTestId("commander-pending")).toBeInTheDocument();
-
-    resolve({ reply: "done", sessionId: "c1" });
-
-    await waitFor(() =>
-      expect(screen.queryByTestId("commander-pending")).not.toBeInTheDocument(),
+  it("mounts the Commander terminal for its session when open", () => {
+    render(
+      <Commander open sessionId="cmd-1" onClose={() => {}} onRelaunch={() => {}} />,
     );
-    expect(screen.getByText("done")).toBeInTheDocument();
+    const term = screen.getByTestId("commander-terminal");
+    expect(term).toHaveAttribute("data-session-id", "cmd-1");
   });
 
-  it("focuses the message input when opened", () => {
-    render(<Commander open onClose={() => {}} engine={makeEngine([])} />);
-    expect(screen.getByLabelText("Message Commander")).toHaveFocus();
-  });
-
-  it("focuses the input when toggled from closed to open", () => {
-    const engine = makeEngine([]);
+  it("keeps the terminal mounted (process alive) while folded", () => {
     const { rerender } = render(
-      <Commander open={false} onClose={() => {}} engine={engine} />,
+      <Commander open sessionId="cmd-1" onClose={() => {}} onRelaunch={() => {}} />,
     );
-    rerender(<Commander open onClose={() => {}} engine={engine} />);
-    expect(screen.getByLabelText("Message Commander")).toHaveFocus();
+    expect(screen.getByTestId("commander-terminal")).toBeInTheDocument();
+
+    // Fold it in: the drawer hides (aria-hidden) but the terminal stays mounted.
+    rerender(
+      <Commander open={false} sessionId="cmd-1" onClose={() => {}} onRelaunch={() => {}} />,
+    );
+    expect(screen.getByTestId("commander-terminal")).toBeInTheDocument();
+    // Hidden from the a11y tree so role queries treat it as closed.
+    expect(screen.queryByRole("dialog", { name: "Commander" })).toBeNull();
   });
 
-  it("renders the Commander emblem icon when open", () => {
-    render(<Commander open onClose={() => {}} engine={makeEngine([])} />);
-    expect(screen.getByTestId("commander-icon")).toBeInTheDocument();
+  it("offers relaunch when open with no live session", () => {
+    const onRelaunch = vi.fn();
+    render(
+      <Commander open sessionId={null} onClose={() => {}} onRelaunch={onRelaunch} />,
+    );
+    expect(screen.queryByTestId("commander-terminal")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Relaunch Commander" }));
+    expect(onRelaunch).toHaveBeenCalledTimes(1);
   });
 
-  it("fires onClose when the close control is activated", () => {
+  it("renders the Commander emblem and fires onClose from the close control", () => {
     const onClose = vi.fn();
-    render(<Commander open onClose={onClose} engine={makeEngine([])} />);
-
+    render(
+      <Commander open sessionId="cmd-1" onClose={onClose} onRelaunch={() => {}} />,
+    );
+    expect(screen.getByTestId("commander-icon")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Close Commander" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -124,37 +72,11 @@ describe("<Commander />", () => {
     render(
       <div>
         <button type="button">outside</button>
-        <Commander open onClose={onClose} engine={makeEngine([])} />
+        <Commander open sessionId="cmd-1" onClose={onClose} onRelaunch={() => {}} />
       </div>,
     );
-
     fireEvent.mouseDown(screen.getByText("outside"));
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("stays open when the pointer goes down inside the drawer", () => {
-    const onClose = vi.fn();
-    render(<Commander open onClose={onClose} engine={makeEngine([])} />);
-
-    fireEvent.mouseDown(screen.getByLabelText("Message Commander"));
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("shows an error and clears pending when the engine rejects", async () => {
-    const engine: CommanderEngine = {
-      ask: vi.fn(() => Promise.reject(new Error("offline"))),
-    };
-    render(<Commander open onClose={() => {}} engine={engine} />);
-
-    send("hello");
-
-    // The failed turn surfaces an alert and the pending indicator clears —
-    // the conversation degrades gracefully instead of silently dying.
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/couldn't reach Commander/i);
-    expect(screen.queryByTestId("commander-pending")).not.toBeInTheDocument();
-    // The input is usable again so the user can retry.
-    expect(screen.getByLabelText("Message Commander")).not.toBeDisabled();
   });
 
   it("ignores outside pointer-downs while closed", () => {
@@ -162,10 +84,9 @@ describe("<Commander />", () => {
     render(
       <div>
         <button type="button">outside</button>
-        <Commander open={false} onClose={onClose} engine={makeEngine([])} />
+        <Commander open={false} sessionId="cmd-1" onClose={onClose} onRelaunch={() => {}} />
       </div>,
     );
-
     fireEvent.mouseDown(screen.getByText("outside"));
     expect(onClose).not.toHaveBeenCalled();
   });

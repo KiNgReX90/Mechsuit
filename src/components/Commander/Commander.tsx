@@ -1,107 +1,59 @@
-import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
-import ReactMarkdown from "react-markdown";
+import { useEffect, useRef } from "react";
 
-import type { CommanderEngine } from "../../lib/commander/types";
+import { Terminal } from "../Terminal";
 import "./Commander.css";
 
-/** A single turn in the Commander conversation, tagged by author. */
-interface Turn {
-  role: "user" | "assistant";
-  text: string;
-}
-
 export interface CommanderProps {
-  /** Whether the overlay is visible. Open-state lives in the app wiring. */
+  /** Whether the drawer is folded out. */
   open: boolean;
-  /** Dismiss the overlay. */
+  /** The live Commander PTY session id, or null when not yet spawned / exited. */
+  sessionId: string | null;
+  /** Fold the drawer in. */
   onClose: () => void;
-  /** The engine the overlay converses with (injected; mocked in tests). */
-  engine: CommanderEngine;
+  /** Spawn a fresh Commander process (used after it exits). */
+  onRelaunch: () => void;
 }
 
 /**
- * Commander chat overlay.
- *
- * A floating panel over the workspace grid: a scrollable message list, a text
- * input + send, and a close control. Assistant replies render as markdown
- * (via `react-markdown`); user messages render plain.
- *
- * Conversation history lives in local state and persists while mounted. The
- * driver's `sessionId` is threaded across turns so one conversation continues:
- * the first `ask` omits it, and each returned id is fed back into the next call.
- * The overlay codes only against the {@link CommanderEngine} interface — it
- * never imports the driver command — which keeps it testable with a mock.
+ * Commander drawer: a glass panel on the right that hosts the Commander as a
+ * live interactive `claude` terminal (so space-bar voice and every interactive
+ * feature work). The terminal stays MOUNTED while folded — the panel is hidden
+ * via a transform + `aria-hidden`, not unmounted — so the process and scrollback
+ * survive folding. Open-state and the session id live in the app wiring.
  */
-export function Commander({ open, onClose, engine }: CommanderProps) {
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [input, setInput] = useState("");
-  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+export function Commander({ open, sessionId, onClose, onRelaunch }: CommanderProps) {
   const drawerRef = useRef<HTMLElement>(null);
 
-  // Put the cursor straight in the message field whenever the overlay opens
-  // (e.g. via the Ctrl+Shift+C hotkey), so the user can type immediately
-  // without first clicking into it.
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
-
-  // Fold the drawer in when the pointer goes down anywhere outside it (e.g.
-  // clicking into a terminal or the sidebar). Pointer-down — not focus loss —
-  // is the trigger, so a programmatic focus change (a freshly spawned terminal
-  // grabbing focus) never collapses a drawer the user just opened. Ctrl+Shift+C
-  // and the close control remain the explicit toggles.
+  // Fold in on a pointer-down anywhere outside the drawer (e.g. clicking a
+  // terminal or the sidebar). Pointer-down — not focus loss — so a programmatic
+  // focus change never collapses a drawer the user just opened.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
       const drawer = drawerRef.current;
-      if (drawer && !drawer.contains(event.target as Node)) {
-        onClose();
-      }
+      if (drawer && !drawer.contains(event.target as Node)) onClose();
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open, onClose]);
 
-  if (!open) return null;
+  // Put keyboard focus in the terminal whenever the drawer opens, so typing and
+  // voice work immediately. xterm renders a helper <textarea> inside the pane.
+  useEffect(() => {
+    if (!open) return;
+    drawerRef.current?.querySelector("textarea")?.focus();
+  }, [open, sessionId]);
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const message = input.trim();
-    if (!message || pending) return;
-
-    setTurns((prev) => [...prev, { role: "user", text: message }]);
-    setInput("");
-    setError(null);
-    setPending(true);
-
-    void (async () => {
-      try {
-        const result = await engine.ask(message, sessionId);
-        setSessionId(result.sessionId);
-        setTurns((prev) => [...prev, { role: "assistant", text: result.reply }]);
-      } catch {
-        // The driver/network failed (e.g. offline). Surface it inline and clear
-        // pending so the conversation degrades gracefully instead of silently
-        // dying — and the rest of the app is untouched.
-        setError(
-          "Couldn't reach Commander. Check your connection and try again.",
-        );
-      } finally {
-        setPending(false);
-      }
-    })();
-  };
+  // Never opened and nothing to keep alive → render nothing at all.
+  if (!open && sessionId == null) return null;
 
   return (
     <aside
       ref={drawerRef}
-      className="commander-drawer"
+      className={`commander-drawer ${open ? "commander-drawer--open" : "commander-drawer--closed"}`}
       role="dialog"
       aria-label="Commander"
+      aria-hidden={open ? undefined : true}
     >
       <div className="commander-header">
         <span className="commander-title">
@@ -118,57 +70,22 @@ export function Commander({ open, onClose, engine }: CommanderProps) {
         </button>
       </div>
 
-      <div className="commander-messages" data-testid="commander-messages">
-        {turns.length === 0 && !pending && (
-          <p className="commander-empty">
-            Ask Commander to find a project, open sessions, or steer the fleet.
-          </p>
-        )}
-        {turns.map((turn, index) => (
-          <div
-            key={index}
-            className={`commander-message commander-message--${turn.role}`}
-          >
-            {turn.role === "assistant" ? (
-              <ReactMarkdown>{turn.text}</ReactMarkdown>
-            ) : (
-              turn.text
-            )}
-          </div>
-        ))}
-        {pending && (
-          <div className="commander-pending" data-testid="commander-pending">
-            <span />
-            <span />
-            <span />
-          </div>
-        )}
-        {error && (
-          <div className="commander-error" role="alert">
-            {error}
+      <div className="commander-body">
+        {sessionId != null ? (
+          <Terminal sessionId={sessionId} />
+        ) : (
+          <div className="commander-relaunch">
+            <p>Commander exited.</p>
+            <button
+              type="button"
+              className="commander-relaunch-button"
+              onClick={onRelaunch}
+            >
+              Relaunch Commander
+            </button>
           </div>
         )}
       </div>
-
-      <form className="commander-input-row" onSubmit={handleSubmit}>
-        <input
-          ref={inputRef}
-          type="text"
-          className="commander-input"
-          aria-label="Message Commander"
-          placeholder="Ask Commander…"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          disabled={pending}
-        />
-        <button
-          type="submit"
-          className="commander-send"
-          disabled={pending || input.trim().length === 0}
-        >
-          Send
-        </button>
-      </form>
     </aside>
   );
 }

@@ -1,10 +1,9 @@
 /*
  * Commander drawer: a glass panel that slides in from the RIGHT edge and
- * overlaps only the right slice of the app shell (~26% width), leaving the
- * sidebar and the rest of the workspace fully visible and interactive — there
- * is no full-screen backdrop, so the drawer never blocks the rest of the app.
- * Visibility is controlled by the `open` prop (the component returns null when
- * closed).
+ * overlaps only the right slice of the app shell, leaving the sidebar and the
+ * rest of the workspace fully visible and interactive — there is no full-screen
+ * backdrop. The terminal stays MOUNTED while folded (hidden via transform +
+ * aria-hidden, not unmounted) so the process and scrollback survive folding.
  */
 .commander-drawer {
   position: absolute;
@@ -14,29 +13,22 @@
   z-index: 10;
   display: flex;
   flex-direction: column;
-  width: clamp(340px, 26%, 480px);
+  width: clamp(380px, 30%, 560px);
   border-left: 1px solid var(--border-strong);
-  background: linear-gradient(
-    180deg,
-    rgba(20, 26, 40, 0.98),
-    rgba(13, 17, 28, 0.98)
-  );
+  background: linear-gradient(180deg, rgba(20, 26, 40, 0.98), rgba(13, 17, 28, 0.98));
   color: var(--text);
-  box-shadow: -22px 0 48px -20px rgba(0, 0, 0, 0.7),
-    inset 1px 0 0 rgba(91, 140, 255, 0.1);
+  box-shadow: -22px 0 48px -20px rgba(0, 0, 0, 0.7), inset 1px 0 0 rgba(91, 140, 255, 0.1);
   overflow: hidden;
-  animation: commander-slide-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@keyframes commander-slide-in {
-  from {
-    opacity: 0.3;
-    transform: translateX(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+/* Folded: slid fully off the right edge but kept mounted (process stays alive). */
+.commander-drawer--closed {
+  transform: translateX(100%);
+  pointer-events: none;
+}
+.commander-drawer--open {
+  transform: translateX(0);
 }
 
 .commander-header {
@@ -97,197 +89,31 @@
   color: var(--text);
 }
 
-.commander-messages {
+/* Terminal fills the drawer below the header. */
+.commander-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  padding: 0.9rem;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
 }
-
-.commander-message {
-  padding: 0.55rem 0.8rem;
-  border-radius: 14px;
-  max-width: 86%;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  box-shadow: var(--shadow-1);
-}
-
-.commander-message--user {
-  align-self: flex-end;
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
-  color: #fff;
-  border-bottom-right-radius: 5px;
-}
-
-.commander-message--assistant {
-  align-self: flex-start;
-  background: var(--bg-elev-3);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 5px;
-}
-
-/* react-markdown emits block elements; keep their margins tight in the bubble. */
-.commander-message--assistant > :first-child {
-  margin-top: 0;
-}
-
-.commander-message--assistant > :last-child {
-  margin-bottom: 0;
-}
-
-/* Markdown niceties inside assistant bubbles. */
-.commander-message--assistant code {
-  font-family: var(--font-mono);
-  font-size: 0.82em;
-  background: rgba(0, 0, 0, 0.35);
-  padding: 0.05em 0.35em;
-  border-radius: 4px;
-}
-
-.commander-message--assistant pre {
-  background: rgba(0, 0, 0, 0.42);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.6rem 0.7rem;
-  overflow: auto;
-}
-
-.commander-message--assistant pre code {
-  background: none;
-  padding: 0;
-}
-
-.commander-message--assistant a {
-  color: var(--accent-hover);
-}
-
-/* Inline error bubble shown when a turn fails (e.g. offline / driver error). */
-.commander-error {
-  align-self: stretch;
-  padding: 0.55rem 0.8rem;
-  border-radius: 12px;
-  border: 1px solid var(--status-error);
-  background: rgba(247, 109, 109, 0.1);
-  color: var(--status-error);
-  font-size: 0.85rem;
-  line-height: 1.45;
-}
-
-/* Empty-state hint shown before the first message. */
-.commander-empty {
-  margin: auto 0.4rem;
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  line-height: 1.55;
-  text-align: center;
-  opacity: 0.85;
-}
-
-/* Typing indicator: three dots that bounce in sequence inside a reply bubble. */
-.commander-pending {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  padding: 0.7rem 0.85rem;
-  border-radius: 14px;
-  border-bottom-left-radius: 5px;
-  background: var(--bg-elev-3);
-  border: 1px solid var(--border);
-}
-
-.commander-pending span {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: var(--text-muted);
-  animation: commander-bounce 1.1s ease-in-out infinite;
-}
-
-.commander-pending span:nth-child(2) {
-  animation-delay: 0.16s;
-}
-
-.commander-pending span:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
-@keyframes commander-bounce {
-  0%,
-  80%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  40% {
-    transform: translateY(-0.28rem);
-    opacity: 1;
-  }
-}
-
-.commander-input-row {
-  display: flex;
-  gap: 0.55rem;
-  padding: 0.75rem 0.9rem;
-  border-top: 1px solid var(--border);
-  background: rgba(10, 13, 20, 0.5);
-  flex: 0 0 auto;
-}
-
-.commander-input {
+.commander-body .terminal-pane {
   flex: 1 1 auto;
-  font: inherit;
-  font-size: 0.9rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elev-1);
-  color: var(--text);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  min-height: 0;
 }
 
-.commander-input::placeholder {
-  color: var(--text-dim);
+.commander-relaunch {
+  margin: auto;
+  text-align: center;
+  color: var(--text-muted);
 }
-
-.commander-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--ring);
-}
-
-.commander-send {
+.commander-relaunch-button {
+  margin-top: 0.6rem;
   font: inherit;
   font-weight: 600;
-  font-size: 0.85rem;
   cursor: pointer;
-  padding: 0.55rem 1.05rem;
+  padding: 0.5rem 1rem;
   border: none;
   border-radius: var(--radius-sm);
   background: linear-gradient(180deg, var(--accent), var(--accent-strong));
   color: #fff;
-  box-shadow: 0 4px 14px -4px rgba(91, 140, 255, 0.55);
-  transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
-}
-
-.commander-send:hover:not(:disabled) {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
-}
-
-.commander-send:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.commander-send:disabled {
-  opacity: 0.5;
-  cursor: default;
-  background: var(--bg-elev-3);
-  color: var(--text-dim);
-  box-shadow: none;
 }
