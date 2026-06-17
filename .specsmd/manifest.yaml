@@ -1,5 +1,5 @@
-flow: fire
-version: 0.1.74
-installed_at: '2026-06-16T04:33:19.263Z'
+flow: inferno
+version: 0.1.75
+installed_at: '2026-06-17T10:10:01.602Z'
 tools:
   - claude

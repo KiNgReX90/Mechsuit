@@ -19,8 +19,8 @@ that directory's live PTY sessions, each typically running an interactive agent 
 ## Status
 
 Greenfield, early implementation. Local-only project for now; it will be exposed later.
-Work is spec-driven under `.specs-fire/`; `state.yaml` is the source of truth for intents
-and progress. Currently building the **foundation** intent (project scaffold + sidebar +
+Work is spec-driven under the INFERNO flow; intents and work items live in
+`.specs-inferno/`. Currently building the **foundation** intent (project scaffold + sidebar +
 multi-terminal grid); status-border styling and sidebar status dots are planned follow-on
 intents.
 

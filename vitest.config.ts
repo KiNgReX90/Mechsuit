@@ -7,7 +7,7 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    // Only run the app's own tests; ignore FIRE/spec metadata harness files.
+    // Only run the app's own tests; ignore spec-flow metadata harness files.
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 });
