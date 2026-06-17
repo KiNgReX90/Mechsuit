@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 
+use crate::models::SessionKind;
+
 /// Shared session map: `Arc` so background reader/waiter threads can hold a
 /// clone that outlives the command invocation, while the managed
 /// [`SessionRegistry`] keeps the same underlying map.
@@ -53,6 +55,10 @@ pub struct SessionHandle {
     /// [`OUTPUT_BUFFER_CAP`]). The reader thread holds a clone and appends to
     /// it; read in-process via [`SessionRegistry::recent_output`].
     pub output: OutputBuffer,
+    /// Whether this is a workspace pane or the Commander.
+    pub kind: SessionKind,
+    /// Whether the session is currently OS-suspended (SIGSTOP). Phase 2.
+    pub paused: bool,
 }
 
 impl SessionHandle {

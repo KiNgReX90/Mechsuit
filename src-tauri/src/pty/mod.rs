@@ -18,10 +18,10 @@ use std::io::{Read, Write};
 use std::thread;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter};
 
 use crate::events::{ExitEvent, OutputEvent, SESSION_EXIT, SESSION_OUTPUT};
-use crate::models::SessionInfo;
+use crate::models::{SessionInfo, SessionKind};
 
 /// Resolve the user's shell, falling back to `/bin/bash`.
 fn default_shell() -> String {
@@ -41,10 +41,15 @@ const AGENT_STARTUP_COMMAND: &str = "claude";
 /// (from [`SessionRegistry::share`]); the `emit_output` / `emit_exit` closures
 /// receive the streamed bytes / exit code — in the command path they forward
 /// to the `AppHandle`, in tests they push to channels.
+#[allow(clippy::too_many_arguments)]
 fn spawn_pty<O, E>(
-    dir_path: &str,
-    sessions: SharedSessions,
+    program: &str,
+    args: &[String],
+    cwd: &str,
+    env_remove: &[&str],
     startup_command: Option<&str>,
+    kind: SessionKind,
+    sessions: SharedSessions,
     mut emit_output: O,
     emit_exit: E,
 ) -> Result<SessionInfo, String>
@@ -54,16 +59,15 @@ where
 {
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
+        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new(default_shell());
-    cmd.cwd(dir_path);
+    let mut cmd = CommandBuilder::new(program);
+    cmd.args(args);
+    cmd.cwd(cwd);
+    for key in env_remove {
+        cmd.env_remove(key);
+    }
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     // Drop the slave after spawn so the child holds the only slave fd; this
@@ -77,8 +81,8 @@ where
     // Auto-run the startup command (e.g. the agent CLI) as the session's first
     // input. The PTY line discipline buffers these bytes until the shell starts
     // reading, so this is safe even though the child may not be ready yet.
-    if let Some(cmd) = startup_command {
-        let _ = writer.write_all(format!("{cmd}\n").as_bytes());
+    if let Some(line) = startup_command {
+        let _ = writer.write_all(format!("{line}\n").as_bytes());
     }
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -88,11 +92,13 @@ where
     let output: OutputBuffer = OutputBuffer::default();
 
     let handle = SessionHandle {
-        dir_path: dir_path.to_string(),
+        dir_path: cwd.to_string(),
         master: pair.master,
         writer,
         killer,
         output: output.clone(),
+        kind,
+        paused: false,
     };
     sessions.lock().unwrap().insert(id.clone(), handle);
 
@@ -122,10 +128,37 @@ where
         emit_exit(waiter_id, code);
     });
 
-    Ok(SessionInfo {
-        id,
-        dir_path: dir_path.to_string(),
-    })
+    Ok(SessionInfo { id, dir_path: cwd.to_string(), kind })
+}
+
+/// Spawn a session and wire its output/exit to the app's event stream. Shared by
+/// `spawn_session` (workspace) and `spawn_commander_session` (Commander).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_app_session(
+    app: &AppHandle,
+    registry: &SessionRegistry,
+    program: &str,
+    args: &[String],
+    cwd: &str,
+    env_remove: &[&str],
+    startup_command: Option<&str>,
+    kind: SessionKind,
+) -> Result<SessionInfo, String> {
+    let sessions = registry.share();
+    let output_app = app.clone();
+    let exit_app = app.clone();
+    spawn_pty(
+        program, args, cwd, env_remove, startup_command, kind, sessions,
+        move |session_id, data| {
+            let _ = output_app.emit(
+                SESSION_OUTPUT,
+                OutputEvent { session_id, data: String::from_utf8_lossy(&data).to_string() },
+            );
+        },
+        move |session_id, code| {
+            let _ = exit_app.emit(SESSION_EXIT, ExitEvent { session_id, code });
+        },
+    )
 }
 
 /// Spawn a PTY session rooted at `dir_path` running the user's shell, which
@@ -136,26 +169,9 @@ pub fn spawn_session(
     app: tauri::AppHandle,
     registry: tauri::State<SessionRegistry>,
 ) -> Result<SessionInfo, String> {
-    let sessions = registry.share();
-    let output_app = app.clone();
-    let exit_app = app;
-
-    spawn_pty(
-        &dir_path,
-        sessions,
-        Some(AGENT_STARTUP_COMMAND),
-        move |session_id, data| {
-            let _ = output_app.emit(
-                SESSION_OUTPUT,
-                OutputEvent {
-                    session_id,
-                    data: String::from_utf8_lossy(&data).to_string(),
-                },
-            );
-        },
-        move |session_id, code| {
-            let _ = exit_app.emit(SESSION_EXIT, ExitEvent { session_id, code });
-        },
+    spawn_app_session(
+        &app, &registry, &default_shell(), &[], &dir_path, &[],
+        Some(AGENT_STARTUP_COMMAND), SessionKind::Workspace,
     )
 }
 
@@ -216,6 +232,7 @@ pub fn list_sessions(
         .map(|(id, h)| SessionInfo {
             id: id.clone(),
             dir_path: h.dir_path.clone(),
+            kind: h.kind,
         })
         .collect())
 }
@@ -226,6 +243,32 @@ mod tests {
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
+    /// Spawn a workspace shell session with the generalized `spawn_pty`, keeping the
+    /// old positional ergonomics the round-trip tests rely on.
+    fn spawn_shell<O, E>(
+        cwd: &str,
+        sessions: SharedSessions,
+        startup: Option<&str>,
+        emit_output: O,
+        emit_exit: E,
+    ) -> Result<SessionInfo, String>
+    where
+        O: FnMut(String, Vec<u8>) + Send + 'static,
+        E: FnOnce(String, Option<i32>) + Send + 'static,
+    {
+        spawn_pty(
+            &default_shell(),
+            &[],
+            cwd,
+            &[],
+            startup,
+            crate::models::SessionKind::Workspace,
+            sessions,
+            emit_output,
+            emit_exit,
+        )
+    }
+
     /// Spawn a PTY, write a command, and assert its echoed output streams back
     /// through the reader thread. Also verifies the session is registered on
     /// spawn (registry add) and removed after the child exits (registry remove).
@@ -235,7 +278,7 @@ mod tests {
         let (out_tx, out_rx) = mpsc::channel::<(String, Vec<u8>)>();
         let (exit_tx, exit_rx) = mpsc::channel::<(String, Option<i32>)>();
 
-        let info = spawn_pty(
+        let info = spawn_shell(
             "/",
             registry.share(),
             None,
@@ -247,6 +290,8 @@ mod tests {
             },
         )
         .expect("spawn_pty should succeed");
+
+        assert_eq!(info.kind, crate::models::SessionKind::Workspace);
 
         // Registry add: the session is live immediately after spawn.
         assert!(registry.contains(&info.id), "session must be registered");
@@ -310,7 +355,7 @@ mod tests {
         let registry = SessionRegistry::default();
         let (out_tx, out_rx) = mpsc::channel::<(String, Vec<u8>)>();
 
-        let info = spawn_pty(
+        let info = spawn_shell(
             "/",
             registry.share(),
             Some("printf MECHSUIT; printf _STARTUP; exit 0"),
@@ -349,7 +394,7 @@ mod tests {
     #[test]
     fn resize_and_kill_lookup() {
         let registry = SessionRegistry::default();
-        let info = spawn_pty("/", registry.share(), None, |_, _| {}, |_, _| {})
+        let info = spawn_shell("/", registry.share(), None, |_, _| {}, |_, _| {})
             .expect("spawn_pty should succeed");
 
         {
@@ -375,7 +420,7 @@ mod tests {
         let registry = SessionRegistry::default();
         let (out_tx, out_rx) = mpsc::channel::<(String, Vec<u8>)>();
 
-        let info = spawn_pty(
+        let info = spawn_shell(
             "/",
             registry.share(),
             None,
@@ -449,7 +494,7 @@ mod tests {
         let registry = SessionRegistry::default();
         let (out_tx, out_rx) = mpsc::channel::<(String, Vec<u8>)>();
 
-        let info = spawn_pty(
+        let info = spawn_shell(
             "/",
             registry.share(),
             None,
@@ -512,8 +557,8 @@ mod tests {
     #[test]
     fn sessions_are_filtered_by_directory() {
         let registry = SessionRegistry::default();
-        let a = spawn_pty("/", registry.share(), None, |_, _| {}, |_, _| {}).expect("spawn a");
-        let b = spawn_pty("/tmp", registry.share(), None, |_, _| {}, |_, _| {}).expect("spawn b");
+        let a = spawn_shell("/", registry.share(), None, |_, _| {}, |_, _| {}).expect("spawn a");
+        let b = spawn_shell("/tmp", registry.share(), None, |_, _| {}, |_, _| {}).expect("spawn b");
 
         let in_tmp: Vec<String> = {
             let sessions = registry.sessions.lock().unwrap();

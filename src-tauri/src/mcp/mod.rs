@@ -360,6 +360,7 @@ pub fn list_sessions_for(registry: &SessionRegistry, dir_path: &str) -> Vec<Sess
         .map(|(id, h)| SessionInfo {
             id: id.clone(),
             dir_path: h.dir_path.clone(),
+            kind: h.kind,
         })
         .collect()
 }
@@ -779,6 +780,8 @@ mod tests {
                 writer,
                 killer,
                 output: output.clone(),
+                kind: crate::models::SessionKind::Workspace,
+                paused: false,
             },
         );
 

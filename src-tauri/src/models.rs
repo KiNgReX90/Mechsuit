@@ -5,6 +5,14 @@
 
 use serde::{Deserialize, Serialize};
 
+/// What a PTY session is: a normal workspace pane, or the singular Commander.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionKind {
+    Workspace,
+    Commander,
+}
+
 /// A user-added directory shown in the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +33,7 @@ pub struct DirectoryInfo {
 pub struct SessionInfo {
     pub id: String,
     pub dir_path: String,
+    pub kind: SessionKind,
 }
 
 /// Persisted application settings.
