@@ -26,8 +26,8 @@ describe("uiStore", () => {
     expect(state.expandedSessionId).toBeNull();
   });
 
-  it("starts with the Commander overlay open (folded out)", () => {
-    expect(useUiStore.getState().commanderOpen).toBe(true);
+  it("starts with the Commander overlay closed (boot default)", () => {
+    expect(useUiStore.getState().commanderOpen).toBe(false);
   });
 
   it("starts with the Settings drawer closed", () => {
