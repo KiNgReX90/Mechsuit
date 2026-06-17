@@ -1966,6 +1966,7 @@ name = "mechsuit"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "libc",
  "portable-pty",
  "reqwest",
  "rmcp",

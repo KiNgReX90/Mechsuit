@@ -26,6 +26,10 @@ pub const COMMANDER_NAVIGATE: &str = "commander://navigate";
 /// the next mount. Payload is empty (unit). The frontend listens on this name.
 pub const COMMANDER_DIRECTORIES_CHANGED: &str = "commander://directories-changed";
 
+/// Emitted when a session is OS-suspended or resumed by Commander (or the UI
+/// resume control). Carries the session id and its new paused state.
+pub const SESSION_PAUSED: &str = "session://paused";
+
 /// Emitted by the background usage poller on each refresh of the Claude
 /// subscription usage limits: immediately on startup, then on a fixed cadence.
 /// Carries a [`UsageUpdate`] — a fresh [`UsageSnapshot`] on success or an error
@@ -46,6 +50,14 @@ pub struct OutputEvent {
 pub struct ExitEvent {
     pub session_id: String,
     pub code: Option<i32>,
+}
+
+/// Payload for [`SESSION_PAUSED`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PausedEvent {
+    pub session_id: String,
+    pub paused: bool,
 }
 
 /// Payload for [`USAGE_UPDATED`].

@@ -146,6 +146,7 @@ pub fn run() {
             pty::resize_session,
             pty::kill_session,
             pty::list_sessions,
+            pty::set_session_paused,
             commander::spawn_commander_session,
             usage::get_usage,
         ])

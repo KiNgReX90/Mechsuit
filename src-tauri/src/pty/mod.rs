@@ -17,10 +17,13 @@ pub use registry::{
 use std::io::{Read, Write};
 use std::thread;
 
+#[cfg(unix)]
+use libc;
+
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::{AppHandle, Emitter};
 
-use crate::events::{ExitEvent, OutputEvent, SESSION_EXIT, SESSION_OUTPUT};
+use crate::events::{ExitEvent, OutputEvent, PausedEvent, SESSION_EXIT, SESSION_OUTPUT, SESSION_PAUSED};
 use crate::models::{SessionInfo, SessionKind};
 
 /// Resolve the user's shell, falling back to `/bin/bash`.
@@ -248,6 +251,56 @@ pub fn list_sessions(
             kind: h.kind,
         })
         .collect())
+}
+
+/// SIGSTOP (pause) or SIGCONT (resume) a session's foreground process group.
+///
+/// Suspends/continues whatever is actually running in the pane (the agent, or a
+/// command it launched) in place — no restart. Refuses the Commander session and
+/// is a no-op when already in the requested state. Linux/Unix only.
+pub fn set_paused_in(
+    sessions: &SharedSessions,
+    session_id: &str,
+    paused: bool,
+) -> Result<(), String> {
+    let mut map = sessions.lock().unwrap();
+    let handle = map
+        .get_mut(session_id)
+        .ok_or_else(|| format!("no such session: {session_id}"))?;
+    if handle.kind == SessionKind::Commander {
+        return Err("cannot pause the Commander session".to_string());
+    }
+    if handle.paused == paused {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        let pgid = handle
+            .master
+            .process_group_leader()
+            .ok_or_else(|| "session has no foreground process group".to_string())?;
+        let signal = if paused { libc::SIGSTOP } else { libc::SIGCONT };
+        // SAFETY: killpg is a libc call; pgid is the PTY's foreground group.
+        let rc = unsafe { libc::killpg(pgid, signal) };
+        if rc != 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+    }
+    handle.paused = paused;
+    Ok(())
+}
+
+/// Pause or resume a session (emits `session://paused` on success).
+#[tauri::command]
+pub fn set_session_paused(
+    session_id: String,
+    paused: bool,
+    app: tauri::AppHandle,
+    registry: tauri::State<SessionRegistry>,
+) -> Result<(), String> {
+    set_paused_in(&registry.share(), &session_id, paused)?;
+    let _ = app.emit(SESSION_PAUSED, PausedEvent { session_id, paused });
+    Ok(())
 }
 
 #[cfg(test)]
@@ -563,6 +616,72 @@ mod tests {
         if let Some(mut h) = registry.remove(&info.id) {
             let _ = h.kill();
         }
+    }
+
+    /// Read the process state char (field 3 of /proc/<pid>/stat): 'T' = stopped.
+    fn proc_state(pid: i32) -> Option<char> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // Skip past "pid (comm)" — comm may contain spaces/parens — then take the
+        // first token of the rest, which is the state char.
+        let after = stat.rsplit_once(')')?.1;
+        after.split_whitespace().next()?.chars().next()
+    }
+
+    /// Pausing a session SIGSTOPs its foreground process group; resuming SIGCONTs
+    /// it. We run a foreground `sleep` in the pane and observe its /proc state flip.
+    #[test]
+    fn pause_then_resume_stops_and_continues_foreground_group() {
+        let registry = SessionRegistry::default();
+        let info = spawn_shell("/", registry.share(), Some("exec sleep 30"), |_, _| {}, |_, _| {})
+            .expect("spawn");
+
+        // Wait until the pane has a foreground process group (the sleep).
+        let pgid = {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let pg = {
+                    let map = registry.sessions.lock().unwrap();
+                    map.get(&info.id).and_then(|h| h.master.process_group_leader())
+                };
+                if let Some(p) = pg {
+                    if proc_state(p).is_some() { break p; }
+                }
+                if Instant::now() >= deadline { panic!("no foreground pgroup appeared"); }
+                thread::sleep(Duration::from_millis(20));
+            }
+        };
+
+        set_paused_in(&registry.share(), &info.id, true).expect("pause");
+        // Poll until stopped.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while proc_state(pgid) != Some('T') && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(proc_state(pgid), Some('T'), "paused process must be stopped");
+        assert!(registry.sessions.lock().unwrap().get(&info.id).unwrap().paused);
+
+        set_paused_in(&registry.share(), &info.id, false).expect("resume");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while proc_state(pgid) == Some('T') && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_ne!(proc_state(pgid), Some('T'), "resumed process must run again");
+        assert!(!registry.sessions.lock().unwrap().get(&info.id).unwrap().paused);
+
+        if let Some(mut h) = registry.remove(&info.id) { let _ = h.kill(); }
+    }
+
+    /// The Commander session refuses to be paused.
+    #[test]
+    fn pause_refuses_commander_session() {
+        let registry = SessionRegistry::default();
+        let info = spawn_pty(
+            &default_shell(), &[], "/", &[], None,
+            crate::models::SessionKind::Commander, registry.share(), |_, _| {}, |_, _| {},
+        ).expect("spawn");
+        let err = set_paused_in(&registry.share(), &info.id, true).unwrap_err();
+        assert!(err.contains("Commander"), "got: {err}");
+        if let Some(mut h) = registry.remove(&info.id) { let _ = h.kill(); }
     }
 
     /// `list_sessions`-style filtering returns only the matching directory's
