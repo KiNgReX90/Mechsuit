@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::directory::DiscoveredDir;
-use crate::events::{COMMANDER_DIRECTORIES_CHANGED, COMMANDER_NAVIGATE};
+use crate::events::{COMMANDER_DIRECTORIES_CHANGED, COMMANDER_NAVIGATE, SESSION_PAUSED, PausedEvent};
 use crate::models::{DirectoryInfo, SessionInfo};
 use crate::pty::SessionRegistry;
 
@@ -131,6 +131,9 @@ pub trait CommanderEvents: Send + Sync + 'static {
     /// `remove_project` mutated it — so the sidebar reloads it
     /// (emits [`COMMANDER_DIRECTORIES_CHANGED`]).
     fn directories_changed(&self);
+    /// Signal that a session was paused/resumed so the UI can reflect it
+    /// (emits [`crate::events::SESSION_PAUSED`]).
+    fn session_paused(&self, session_id: &str, paused: bool);
 }
 
 /// [`CommanderEvents`] that emits the Commander Tauri events over the app handle.
@@ -145,6 +148,13 @@ impl CommanderEvents for AppCommanderEvents {
 
     fn directories_changed(&self) {
         let _ = self.app.emit(COMMANDER_DIRECTORIES_CHANGED, ());
+    }
+
+    fn session_paused(&self, session_id: &str, paused: bool) {
+        let _ = self.app.emit(
+            SESSION_PAUSED,
+            PausedEvent { session_id: session_id.to_string(), paused },
+        );
     }
 }
 
@@ -222,6 +232,19 @@ pub struct RemoveProjectParams {
     /// or `false` returns `confirmationRequired` without changing anything.
     #[serde(default)]
     pub confirm: bool,
+}
+
+/// Parameters for `pause_sessions` / `resume_sessions`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PauseSessionsParams {
+    /// Workspace identifiers (name, branch, or path) to (un)pause. Each is
+    /// resolved like `remove_project`.
+    #[serde(default)]
+    pub queries: Vec<String>,
+    /// Pause/resume EVERY managed workspace instead of specific ones.
+    #[serde(default)]
+    pub all: bool,
 }
 
 // ---- Pure tool logic (testable without a Tauri runtime) --------------------
@@ -346,6 +369,47 @@ pub fn remove_project(
         killed_sessions: killed,
         path: dir.path,
     })
+}
+
+/// Resolve `queries` (or every managed dir when `all`) to managed directories,
+/// then pause/resume each dir's WORKSPACE sessions via the registry, signalling
+/// `events.session_paused` per toggled session. Returns (path, count) per
+/// resolved directory. The Commander session is never affected (the registry
+/// primitive refuses it).
+pub fn pause_workspaces(
+    registry: &SessionRegistry,
+    dirs: &[DirectoryInfo],
+    queries: &[String],
+    all: bool,
+    paused: bool,
+    events: &dyn CommanderEvents,
+) -> Vec<(String, usize)> {
+    let targets: Vec<DirectoryInfo> = if all {
+        dirs.to_vec()
+    } else {
+        queries.iter().filter_map(|q| match_project(dirs, q)).collect()
+    };
+
+    let mut out = Vec::new();
+    for d in targets {
+        let ids: Vec<String> = {
+            let sessions = registry.sessions.lock().unwrap();
+            sessions
+                .iter()
+                .filter(|(_, h)| h.dir_path == d.path && h.kind == crate::models::SessionKind::Workspace)
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        let mut count = 0;
+        for id in &ids {
+            if crate::pty::set_paused_in(&registry.share(), id, paused).is_ok() {
+                events.session_paused(id, paused);
+                count += 1;
+            }
+        }
+        out.push((d.path, count));
+    }
+    out
 }
 
 /// The live sessions belonging to `dir_path` (same filtering as the
@@ -527,6 +591,34 @@ impl MechsuitServer {
             Err(msg) => Err(ErrorData::internal_error(msg, None)),
         }
     }
+
+    #[tool(
+        description = "Pause (OS-suspend) all running sessions in one or more \
+        managed workspaces. Pass queries (names/branches/paths) and/or all=true. \
+        Reversible and non-destructive: it freezes the agents in place; resume \
+        them with resume_sessions. Do it directly when asked."
+    )]
+    fn pause_sessions(
+        &self,
+        Parameters(PauseSessionsParams { queries, all }): Parameters<PauseSessionsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let dirs = self.dirs.directories();
+        let counts = pause_workspaces(&self.registry, &dirs, &queries, all, true, self.events.as_ref());
+        json_result(&counts)
+    }
+
+    #[tool(
+        description = "Resume (un-suspend) all paused sessions in one or more \
+        managed workspaces. Pass queries (names/branches/paths) and/or all=true."
+    )]
+    fn resume_sessions(
+        &self,
+        Parameters(PauseSessionsParams { queries, all }): Parameters<PauseSessionsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let dirs = self.dirs.directories();
+        let counts = pause_workspaces(&self.registry, &dirs, &queries, all, false, self.events.as_ref());
+        json_result(&counts)
+    }
 }
 
 #[tool_handler]
@@ -536,7 +628,7 @@ impl ServerHandler for MechsuitServer {
             .with_instructions(
                 "mechsuit session tools: resolve_project, list_sessions, \
                 read_session_output, send_to_session, discover_projects, \
-                add_project, remove_project.",
+                add_project, remove_project, pause_sessions, resume_sessions.",
             )
     }
 }
@@ -679,16 +771,20 @@ mod tests {
         }
     }
 
-    /// Records every navigated path (`.0`) and counts directories-changed
-    /// signals (`.1`) so both side effects are assertable without a Tauri runtime.
+    /// Records every navigated path (`.0`), counts directories-changed
+    /// signals (`.1`), and records session_paused side effects (`.2`) so all
+    /// side effects are assertable without a Tauri runtime.
     #[derive(Default)]
-    struct RecordingSink(StdMutex<Vec<String>>, StdMutex<usize>);
+    struct RecordingSink(StdMutex<Vec<String>>, StdMutex<usize>, StdMutex<Vec<(String, bool)>>);
     impl CommanderEvents for RecordingSink {
         fn navigate(&self, dir_path: &str) {
             self.0.lock().unwrap().push(dir_path.to_string());
         }
         fn directories_changed(&self) {
             *self.1.lock().unwrap() += 1;
+        }
+        fn session_paused(&self, session_id: &str, paused: bool) {
+            self.2.lock().unwrap().push((session_id.to_string(), paused));
         }
     }
 
@@ -985,6 +1081,28 @@ mod tests {
         )
         .expect("remove_project ok");
         assert!(matches!(miss, RemoveProjectOutcome::NotFound));
+    }
+
+    /// pause_workspaces resolves queries to managed dirs, pauses each dir's
+    /// WORKSPACE sessions (never the Commander), records a paused side effect per
+    /// session, and returns per-path counts.
+    #[test]
+    fn pause_workspaces_resolves_and_pauses_each_dirs_sessions() {
+        let registry = SessionRegistry::default();
+        let sink: Arc<RecordingSink> = Arc::new(RecordingSink::default());
+
+        // Two managed dirs; spawn one workspace session in the first.
+        let managed = vec![dir("/work/alpha", "alpha", Some("main")), dir("/work/beta", "beta", None)];
+        let s1 = spawn_session(&registry, "/work/alpha"); // helper spawns kind = Workspace
+
+        let counts = pause_workspaces(
+            &registry, &managed, &["alpha".to_string()], false, true, sink.as_ref(),
+        );
+        assert_eq!(counts, vec![("/work/alpha".to_string(), 1)]);
+        assert_eq!(sink.2.lock().unwrap().as_slice(), [(s1.clone(), true)]);
+        assert!(registry.sessions.lock().unwrap().get(&s1).unwrap().paused);
+
+        if let Some(mut h) = registry.remove(&s1) { let _ = h.kill(); }
     }
 
     /// A Commander-driven `add_project` must both persist the directory AND

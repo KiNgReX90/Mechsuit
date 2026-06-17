@@ -50,7 +50,10 @@ You also manage the workspace itself. discover_projects (default root ~/dev) fin
 repos/dirs and add_project adds one — both are direct, non-destructive; do them without asking. \
 remove_project is destructive: ALWAYS get explicit user confirmation first. When it returns \
 confirmationRequired with activeSessions > 0, warn the user that removing will kill that many live \
-sessions and ask them to confirm; only after they agree, re-call remove_project with confirm: true.";
+sessions and ask them to confirm; only after they agree, re-call remove_project with confirm: true. \
+You can also pause and resume a workspace's running agents: pause_sessions (queries \
+and/or all:true) OS-suspends them in place — reversible and non-destructive, so do it \
+directly when asked; resume_sessions continues them.";
 
 /// Build the MCP config JSON string passed to `--mcp-config`.
 ///
