@@ -33,10 +33,15 @@ export interface DiscoveredDir {
   alreadyManaged: boolean;
 }
 
+/** Kind of PTY session: a normal workspace pane, or the singular Commander. */
+export type SessionKind = "workspace" | "commander";
+
 /** A running PTY session, tracked per-directory. */
 export interface SessionInfo {
   id: string;
   dirPath: string;
+  /** Backend always sets this; optional only so older test fixtures still type. */
+  kind?: SessionKind;
 }
 
 /** Payload of the `session://output` event. */

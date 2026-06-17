@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as commands from "../ipc/commands";
+import { listSessions } from "../ipc/commands";
 import { useSessionsStore } from "./sessionsStore";
 import type { SessionInfo } from "../types";
 
@@ -90,5 +91,17 @@ describe("sessionsStore.removeSession", () => {
     ).resolves.toBeUndefined();
 
     expect(mockedCommands.killSession).toHaveBeenCalledWith("s1");
+  });
+});
+
+describe("sessionsStore.loadDirectory", () => {
+  it("excludes the commander session from a directory's list", async () => {
+    vi.mocked(listSessions).mockResolvedValue([
+      { id: "w1", dirPath: "/repo", kind: "workspace" },
+      { id: "cmd", dirPath: "/repo", kind: "commander" },
+    ]);
+    await useSessionsStore.getState().loadDirectory("/repo");
+    const list = useSessionsStore.getState().sessionsByDirectory["/repo"];
+    expect(list.map((s) => s.id)).toEqual(["w1"]);
   });
 });

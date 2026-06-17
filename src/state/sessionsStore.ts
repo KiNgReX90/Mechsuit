@@ -41,7 +41,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 
   loadDirectory: async (dirPath) => {
     const all = await listSessions();
-    const forDir = all.filter((s) => s.dirPath === dirPath);
+    const forDir = all.filter((s) => s.dirPath === dirPath && s.kind !== "commander");
     set((state) => ({
       sessionsByDirectory: {
         ...state.sessionsByDirectory,

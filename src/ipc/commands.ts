@@ -8,7 +8,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { AppSettings, DirectoryInfo, DiscoveredDir, SessionInfo, UsageSnapshot } from "../types";
-import type { CommanderMessage } from "../lib/commander/types";
 
 /** Add a directory to the managed list, returning its resolved info. */
 export function addDirectory(path: string): Promise<DirectoryInfo> {
@@ -67,15 +66,12 @@ export function listSessions(): Promise<SessionInfo[]> {
 }
 
 /**
- * Send a message to Commander (the headless `claude` supervisor) and resolve
- * its reply plus the conversation id. Pass the returned `sessionId` back on the
- * next call to continue the same conversation; omit it to start a new one.
+ * Spawn (or return the existing) Commander terminal session — an interactive
+ * `claude` rooted at the user's home, wired to mechsuit's MCP tools. Idempotent:
+ * repeated calls return the same live session.
  */
-export function commanderSend(
-  message: string,
-  sessionId?: string,
-): Promise<CommanderMessage> {
-  return invoke<CommanderMessage>("commander_send", { message, sessionId });
+export function spawnCommanderSession(): Promise<SessionInfo> {
+  return invoke<SessionInfo>("spawn_commander_session");
 }
 
 /** Retrieve the persisted application settings. */
