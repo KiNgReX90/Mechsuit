@@ -74,6 +74,22 @@
   color: var(--accent-hover);
 }
 
+/* Push the Commander launcher to the far right, away from the pane controls. */
+.workspace-action-spacer {
+  flex: 0 0 0.75rem;
+}
+
+/* Commander launcher reads as the accent control; active when the drawer is open. */
+.workspace-action--commander {
+  color: var(--accent-hover);
+  border-color: var(--border-strong);
+}
+.workspace-action--commander-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
 .workspace-empty-hint {
   margin: auto;
   text-align: center;
@@ -83,7 +99,7 @@
 
 /* Surface the Commander hotkey on the empty canvas (decorative second line). */
 .workspace-empty-hint::after {
-  content: "Press  Ctrl + Shift + C  to summon Commander";
+  content: "Press  Ctrl + Shift + C  (or the Commander icon) to summon Commander";
   display: block;
   margin-top: 0.6rem;
   font-size: 0.78rem;

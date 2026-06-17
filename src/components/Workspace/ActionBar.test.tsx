@@ -10,6 +10,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { useUiStore } from "../../state/uiStore";
+
 import { ActionBar } from "./ActionBar";
 
 describe("ActionBar", () => {
@@ -85,5 +87,21 @@ describe("ActionBar", () => {
     expect(
       screen.queryByRole("button", { name: "Open 2 terminals" }),
     ).toBeNull();
+  });
+
+  it("toggles Commander from the far-right button and reflects open state", () => {
+    useUiStore.setState({ commanderOpen: false });
+    render(<ActionBar hasDirectory sessionCount={1} onSpawnTerminals={vi.fn()} />);
+
+    const button = screen.getByRole("button", { name: "Commander" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(button);
+    expect(useUiStore.getState().commanderOpen).toBe(true);
+  });
+
+  it("shows the Commander button even without a directory", () => {
+    render(<ActionBar hasDirectory={false} sessionCount={0} onSpawnTerminals={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Commander" })).toBeInTheDocument();
   });
 });

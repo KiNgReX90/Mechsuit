@@ -8,6 +8,7 @@
  * Both are disabled when no directory is selected.
  */
 import { quickSpawnTargets, spawnsToReach } from "../../lib/quickSpawn";
+import { useUiStore } from "../../state/uiStore";
 
 export interface ActionBarProps {
   /** Whether a directory is currently selected (actions require one). */
@@ -74,6 +75,8 @@ export function ActionBar({
   onSpawnTerminals,
 }: ActionBarProps) {
   const targets = hasDirectory ? quickSpawnTargets(sessionCount) : [];
+  const commanderOpen = useUiStore((s) => s.commanderOpen);
+  const toggleCommander = useUiStore((s) => s.toggleCommander);
 
   return (
     <div
@@ -124,6 +127,40 @@ export function ActionBar({
           </button>
         );
       })}
+
+      <span className="workspace-action-spacer" aria-hidden="true" />
+
+      <button
+        type="button"
+        className={
+          commanderOpen
+            ? "workspace-action workspace-action--commander workspace-action--commander-active"
+            : "workspace-action workspace-action--commander"
+        }
+        aria-label="Commander"
+        aria-pressed={commanderOpen}
+        title="Commander (Ctrl+Shift+C)"
+        onClick={toggleCommander}
+      >
+        {/* Commander hex sigil with a downward double-chevron (matches the
+            drawer emblem). */}
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path
+            d="M12 2.2 20.3 7v10L12 21.8 3.7 17V7L12 2.2Z"
+            fill="rgba(91,140,255,0.16)"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
+          <path
+            d="m8.4 9.3 3.6 3.1 3.6-3.1M8.4 13.2l3.6 3.1 3.6-3.1"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
     </div>
   );
 }
