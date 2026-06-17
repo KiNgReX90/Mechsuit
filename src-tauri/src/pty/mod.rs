@@ -131,6 +131,19 @@ where
     Ok(SessionInfo { id, dir_path: cwd.to_string(), kind })
 }
 
+/// Spawn a registry-backed shell session with no app event wiring — test-only,
+/// used by cross-module tests that need a live session of a given kind.
+#[cfg(test)]
+pub fn spawn_app_session_for_test(
+    registry: &SessionRegistry,
+    program: &str,
+    cwd: &str,
+    kind: crate::models::SessionKind,
+) -> SessionInfo {
+    spawn_pty(program, &[], cwd, &[], None, kind, registry.share(), |_, _| {}, |_, _| {})
+        .expect("test spawn")
+}
+
 /// Spawn a session and wire its output/exit to the app's event stream. Shared by
 /// `spawn_session` (workspace) and `spawn_commander_session` (Commander).
 #[allow(clippy::too_many_arguments)]

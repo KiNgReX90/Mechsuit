@@ -60,6 +60,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(registry.clone())
+        .manage(commander::CommanderSession::default())
         .setup(move |app| {
             // Start the localhost-only MCP server with the shared registry +
             // the AppHandle (for resolve_project's commander://navigate emit and
@@ -145,7 +146,7 @@ pub fn run() {
             pty::resize_session,
             pty::kill_session,
             pty::list_sessions,
-            commander::commander_send,
+            commander::spawn_commander_session,
             usage::get_usage,
         ])
         .run(tauri::generate_context!())

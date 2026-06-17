@@ -59,9 +59,7 @@ pub const MCP_PATH: &str = "/mcp";
 /// driver (`commander-claude-driver`) can read it to build its `--mcp-config`.
 /// The full MCP URL is `http://{0}{MCP_PATH}`.
 ///
-/// The field is read by the forthcoming `commander-claude-driver` (serialized
-/// after this item); `allow(dead_code)` prevents a warning until that lands.
-#[allow(dead_code)]
+/// Read by `commander::spawn_commander_session` to build the `--mcp-config` URL.
 pub struct McpServerAddr(pub SocketAddr);
 
 /// Source of the managed directory list backing `resolve_project`.
