@@ -10,15 +10,15 @@
  * sessions) when the directory has active sessions. Clicking a directory
  * selects it in `uiStore`.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { discoverDirectories } from "../../ipc/commands";
+import { selectableCandidates } from "../../lib/discovery";
 import { isStale, relativeTime } from "../../lib/relativeTime";
 import { useDirectoriesStore } from "../../state/directoriesStore";
 import { useSessionsStore } from "../../state/sessionsStore";
 import { useUiStore } from "../../state/uiStore";
 import type { DiscoveredDir } from "../../types";
-import { Settings } from "../Settings";
 
 import "./Sidebar.css";
 
@@ -35,12 +35,19 @@ function Sidebar() {
   const setSelectedDirectoryPath = useUiStore(
     (s) => s.setSelectedDirectoryPath,
   );
+  // The Settings drawer's open-state lives in uiStore so App can mount the
+  // drawer in `.app-body` (the full-width positioned container, like Commander).
+  // Mounting it here inside the 260px `.sidebar` made its `right: 0` anchor to
+  // the sidebar's edge, so the drawer spilled off the left of the window.
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
 
   const [adding, setAdding] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [draftPath, setDraftPath] = useState("");
   /** Discovered candidate directories shown in the add combobox dropdown. */
   const [suggestions, setSuggestions] = useState<DiscoveredDir[]>([]);
+  /** True while a discovery walk is in flight (drives the loading indicator). */
+  const [discovering, setDiscovering] = useState(false);
   /** Path of the directory whose remove is awaiting confirmation, or null. */
   const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
 
@@ -48,15 +55,38 @@ function Sidebar() {
     void load();
   }, [load]);
 
+  /**
+   * Run a discovery walk and refresh the cached suggestions. The walk is slow
+   * (a bounded filesystem scan that shells out to git per candidate), so it is
+   * never awaited inline on the open path: results land in state when ready and
+   * `discovering` drives a loading indicator until then. Errors keep whatever
+   * suggestions we already have rather than blanking the dropdown.
+   */
+  const runDiscovery = useCallback(() => {
+    setDiscovering(true);
+    discoverDirectories()
+      .then(setSuggestions)
+      .catch(() => {})
+      .finally(() => setDiscovering(false));
+  }, []);
+
+  // Prime discovery in the background on mount so the dropdown is already warm
+  // by the time the user clicks "+" — opening is then instant in the common
+  // case, with the loading indicator only ever seen on a cold first click.
+  useEffect(() => {
+    runDiscovery();
+  }, [runDiscovery]);
+
   const closeAdd = () => {
     setAdding(false);
-    setSuggestions([]);
     setDraftPath("");
   };
 
   /**
-   * Toggle the add combobox. Opening kicks off a discovery walk (under the
-   * user's `~/dev`) to populate the dropdown; closing clears it.
+   * Toggle the add combobox. Opening shows the already-warmed suggestions
+   * instantly and kicks off a fresh discovery to revalidate them
+   * (stale-while-revalidate); closing just hides the dropdown — the cached
+   * suggestions are kept so the next open stays instant.
    */
   const toggleAdd = () => {
     if (adding) {
@@ -64,9 +94,7 @@ function Sidebar() {
       return;
     }
     setAdding(true);
-    void discoverDirectories()
-      .then(setSuggestions)
-      .catch(() => setSuggestions([]));
+    runDiscovery();
   };
 
   const submitAdd = async () => {
@@ -78,25 +106,17 @@ function Sidebar() {
     closeAdd();
   };
 
-  /** Add a discovered candidate from the dropdown (no-op if already managed). */
+  /** Add a discovered candidate from the dropdown. */
   const selectCandidate = async (candidate: DiscoveredDir) => {
-    if (candidate.alreadyManaged) {
-      return;
-    }
     await add(candidate.path);
     closeAdd();
   };
 
-  // The input doubles as a filter over the discovered candidates (by name or
-  // path); an empty input shows them all.
-  const query = draftPath.trim().toLowerCase();
-  const filteredSuggestions = query
-    ? suggestions.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query) ||
-          c.path.toLowerCase().includes(query),
-      )
-    : suggestions;
+  // The input doubles as a filter over the discovered candidates. Already-managed
+  // directories are dropped (you can't add what's already there); the rest are
+  // matched by name or path against the query (empty input shows them all).
+  const filteredSuggestions = selectableCandidates(suggestions, draftPath);
+  const showLoading = discovering && filteredSuggestions.length === 0;
 
   /** Active sessions for a directory (empty array when none tracked). */
   const sessionsFor = (path: string) => sessionsByDirectory[path] ?? [];
@@ -126,7 +146,7 @@ function Sidebar() {
   return (
     <div className="sidebar-content">
       <div className="sidebar-header">
-        <span className="sidebar-title">Directories</span>
+        <span className="sidebar-title">Workspaces</span>
         <div className="sidebar-header-actions">
           <button
             type="button"
@@ -153,7 +173,7 @@ function Sidebar() {
           <button
             type="button"
             className="sidebar-add-button"
-            aria-label="Add directory"
+            aria-label="Add workspace"
             aria-expanded={adding}
             onClick={toggleAdd}
           >
@@ -161,8 +181,6 @@ function Sidebar() {
           </button>
         </div>
       </div>
-
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {adding && (
         <div className="sidebar-add">
@@ -176,7 +194,7 @@ function Sidebar() {
             <input
               type="text"
               className="sidebar-add-input"
-              aria-label="Directory path"
+              aria-label="Workspace path"
               placeholder="Filter ~/dev or type a path…"
               value={draftPath}
               onChange={(e) => setDraftPath(e.target.value)}
@@ -188,6 +206,13 @@ function Sidebar() {
               Add
             </button>
           </form>
+
+          {showLoading && (
+            <div className="sidebar-add-loading" role="status">
+              <span className="sidebar-add-spinner" aria-hidden="true" />
+              Scanning for workspaces…
+            </div>
+          )}
 
           {filteredSuggestions.length > 0 && (
             <ul
@@ -205,24 +230,16 @@ function Sidebar() {
                     role="option"
                     aria-selected="false"
                     className="sidebar-add-suggestion"
-                    disabled={candidate.alreadyManaged}
                     onClick={() => void selectCandidate(candidate)}
                   >
                     <span className="sidebar-add-suggestion-head">
                       <span className="sidebar-add-suggestion-name">
                         {candidate.name}
                       </span>
-                      {candidate.alreadyManaged ? (
-                        <span className="sidebar-add-suggestion-managed">
-                          added
+                      {candidate.isGitRepo && candidate.branch && (
+                        <span className="sidebar-add-suggestion-branch">
+                          {candidate.branch}
                         </span>
-                      ) : (
-                        candidate.isGitRepo &&
-                        candidate.branch && (
-                          <span className="sidebar-add-suggestion-branch">
-                            {candidate.branch}
-                          </span>
-                        )
                       )}
                     </span>
                     <span className="sidebar-add-suggestion-path">

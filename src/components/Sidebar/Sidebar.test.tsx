@@ -86,6 +86,7 @@ beforeEach(() => {
     selectedDirectoryPath: null,
     focusedSessionId: null,
     expandedSessionId: null,
+    settingsOpen: false,
   });
   // Stub the settings store actions so the panel's open-time load() is inert.
   useSettingsStore.setState({
@@ -139,9 +140,9 @@ describe("Sidebar", () => {
     render(<Sidebar />);
     await screen.findByText("repo");
 
-    fireEvent.click(screen.getByRole("button", { name: "Add directory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add workspace" }));
 
-    const input = screen.getByLabelText("Directory path");
+    const input = screen.getByLabelText("Workspace path");
     fireEvent.change(input, { target: { value: "/home/ruben/added" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
@@ -157,7 +158,7 @@ describe("Sidebar", () => {
     render(<Sidebar />);
     await screen.findByText("repo");
 
-    fireEvent.click(screen.getByRole("button", { name: "Add directory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add workspace" }));
 
     await waitFor(() =>
       expect(mockedCommands.discoverDirectories).toHaveBeenCalled(),
@@ -170,10 +171,10 @@ describe("Sidebar", () => {
   it("filters discovered candidates as you type in the input", async () => {
     render(<Sidebar />);
     await screen.findByText("repo");
-    fireEvent.click(screen.getByRole("button", { name: "Add directory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add workspace" }));
     const listbox = await screen.findByRole("listbox");
 
-    fireEvent.change(screen.getByLabelText("Directory path"), {
+    fireEvent.change(screen.getByLabelText("Workspace path"), {
       target: { value: "alph" },
     });
 
@@ -190,7 +191,7 @@ describe("Sidebar", () => {
     });
     render(<Sidebar />);
     await screen.findByText("repo");
-    fireEvent.click(screen.getByRole("button", { name: "Add directory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add workspace" }));
     const listbox = await screen.findByRole("listbox");
 
     fireEvent.click(within(listbox).getByRole("option", { name: /alpha/ }));
@@ -202,13 +203,43 @@ describe("Sidebar", () => {
     );
   });
 
-  it("disables candidates that are already managed", async () => {
+  it("does not display already-managed candidates", async () => {
     render(<Sidebar />);
     await screen.findByText("repo");
-    fireEvent.click(screen.getByRole("button", { name: "Add directory" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add workspace" }));
     const listbox = await screen.findByRole("listbox");
 
-    expect(within(listbox).getByRole("option", { name: /gamma/ })).toBeDisabled();
+    // alpha/beta are unmanaged and offered; gamma is already managed and hidden
+    // (you can't add what's already there).
+    expect(
+      within(listbox).getByRole("option", { name: /alpha/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(listbox).queryByRole("option", { name: /gamma/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("primes discovery on mount so the combobox opens instantly", async () => {
+    render(<Sidebar />);
+
+    // Discovery runs in the background on mount — before the user ever clicks
+    // "+" — so the dropdown is already populated when they open it.
+    await waitFor(() =>
+      expect(mockedCommands.discoverDirectories).toHaveBeenCalled(),
+    );
+  });
+
+  it("shows a loading indicator while discovery is still running", async () => {
+    // A discovery that never resolves keeps the combobox in its loading state.
+    mockedCommands.discoverDirectories.mockImplementation(
+      () => new Promise<DiscoveredDir[]>(() => {}),
+    );
+    render(<Sidebar />);
+    await screen.findByText("repo");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add workspace" }));
+
+    expect(screen.getByText(/scanning/i)).toBeInTheDocument();
   });
 
   it("selects a directory, updating uiStore.selectedDirectoryPath", async () => {
@@ -294,31 +325,21 @@ describe("Sidebar", () => {
     expect(mockedCommands.killSession).toHaveBeenCalledWith("s2");
   });
 
-  it("opens the settings panel from the gear control and closes it", async () => {
+  it("requests the settings drawer via the gear control", async () => {
+    // The drawer itself is mounted by App in `.app-body` (so its `right: 0`
+    // anchors to the full window, not the sidebar). The Sidebar only owns the
+    // gear, which flips the shared uiStore flag App reads.
     render(<Sidebar />);
     await screen.findByText("repo");
 
-    // Panel is hidden until the gear is activated.
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
+    const gear = screen.getByRole("button", { name: "Settings" });
+    expect(gear).toHaveAttribute("aria-expanded", "false");
+    expect(useUiStore.getState().settingsOpen).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(gear);
 
-    const panel = await screen.findByRole("dialog", { name: "Settings" });
-    expect(panel).toBeInTheDocument();
-    // Seeded workspace root shows in the field.
-    expect(screen.getByLabelText("Workspace root")).toHaveValue(
-      "/home/ruben/dev",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
-
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "Settings" }),
-      ).not.toBeInTheDocument(),
-    );
+    expect(useUiStore.getState().settingsOpen).toBe(true);
+    expect(gear).toHaveAttribute("aria-expanded", "true");
   });
 
   it("cancels the remove confirm without killing or removing", async () => {
