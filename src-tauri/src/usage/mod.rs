@@ -16,7 +16,11 @@
 //! Privacy: the access token and the full `Authorization` header are never
 //! logged.
 
+use std::process::Command;
+use std::sync::{Arc, Mutex, OnceLock};
+
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
 /// Usage endpoint (undocumented OAuth surface). Returns the subscription's
 /// rolling-window utilization.
@@ -56,6 +60,32 @@ pub struct UsageSnapshot {
     /// The rolling seven-day window.
     #[serde(alias = "seven_day")]
     pub seven_day: UsageWindow,
+}
+
+/// Process-lifetime cache of the most recent successful usage snapshot.
+///
+/// The background poller writes it on every successful fetch; [`get_usage`]
+/// (the frontend's mount-time prime) reads it instead of issuing its own
+/// network request. This (a) avoids a duplicate request on every boot — which
+/// matters against the endpoint's rate limit — and (b) hands the frontend the
+/// poller's already-fetched data even if the webview subscribed to
+/// `usage://updated` too late to catch the poller's first emit. A poisoned lock
+/// degrades to "no cached value" rather than panicking.
+#[derive(Clone, Default)]
+pub struct UsageCache(Arc<Mutex<Option<UsageSnapshot>>>);
+
+impl UsageCache {
+    /// The last cached snapshot, or `None` if none has been stored yet.
+    pub fn get(&self) -> Option<UsageSnapshot> {
+        self.0.lock().ok().and_then(|guard| guard.clone())
+    }
+
+    /// Replace the cached snapshot with the latest successful fetch.
+    pub fn set(&self, snapshot: UsageSnapshot) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = Some(snapshot);
+        }
+    }
 }
 
 /// Extract `claudeAiOauth.accessToken` from the contents of
@@ -101,6 +131,51 @@ fn read_access_token() -> Result<String, String> {
     parse_access_token(&contents)
 }
 
+/// Fallback User-Agent version when the installed `claude` CLI version cannot
+/// be resolved. Any `claude-code/<version>` reaches the normal request bucket;
+/// the exact number is not validated by the endpoint.
+const FALLBACK_UA_VERSION: &str = "2.1.0";
+
+/// Extract the first `major.minor.patch` token from `claude --version` output.
+///
+/// Pure and testable. Tolerates a leading `v` and a pre-release suffix
+/// (e.g. `v2.0.10-beta` -> `2.0.10`); returns `None` when no three-part semver
+/// is present.
+fn parse_claude_version(output: &str) -> Option<String> {
+    output.split_whitespace().find_map(|token| {
+        // Strip anything that isn't a digit or dot from both ends (the leading
+        // `v`, a trailing `-beta`, surrounding parens, etc.).
+        let core = token.trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+        let parts: Vec<&str> = core.split('.').collect();
+        let is_semver = parts.len() == 3
+            && parts
+                .iter()
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
+        is_semver.then(|| core.to_string())
+    })
+}
+
+/// The `User-Agent` sent to the usage endpoint, resolved once per process.
+///
+/// The endpoint **requires** a `claude-code/<version>` User-Agent: without it,
+/// requests land in an aggressively rate-limited bucket that returns persistent
+/// 429s (confirmed empirically and in the Claude Code issue tracker). We mirror
+/// the installed `claude` CLI's version when readable, else fall back to a
+/// constant.
+fn usage_user_agent() -> &'static str {
+    static UA: OnceLock<String> = OnceLock::new();
+    UA.get_or_init(|| {
+        let version = Command::new("claude")
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| parse_claude_version(&String::from_utf8_lossy(&out.stdout)))
+            .unwrap_or_else(|| FALLBACK_UA_VERSION.to_string());
+        format!("claude-code/{version}")
+    })
+}
+
 /// `GET` the usage endpoint with the OAuth bearer token + beta header and parse
 /// the body into a [`UsageSnapshot`].
 ///
@@ -113,6 +188,9 @@ async fn fetch_usage(token: &str) -> Result<UsageSnapshot, String> {
         .get(USAGE_URL)
         .header("Authorization", format!("Bearer {token}"))
         .header("anthropic-beta", OAUTH_BETA)
+        // Required: without a claude-code User-Agent the endpoint throttles hard
+        // (persistent 429s). See [`usage_user_agent`].
+        .header("User-Agent", usage_user_agent())
         .send()
         .await
         .map_err(|e| format!("usage request failed: {e}"))?;
@@ -141,19 +219,68 @@ pub async fn fetch_snapshot() -> Result<UsageSnapshot, String> {
     fetch_usage(&token).await
 }
 
-/// Read the current Claude subscription usage snapshot.
+/// Read the current Claude subscription usage snapshot for the frontend's
+/// mount-time prime.
 ///
-/// Reads the OAuth token fresh from `~/.claude/.credentials.json`, fetches the
-/// usage endpoint, and parses the result. Any I/O, network, or parse failure is
-/// a clear `Err(String)` for the UI to surface — never a panic.
+/// Serves the background poller's cached snapshot when one exists — no second
+/// network request, and the frontend gets data even if it missed the poller's
+/// first `usage://updated` emit. Only on a cold cache (very early boot, before
+/// the poller's first fetch lands) does it fetch once and warm the cache. Any
+/// I/O, network, or parse failure is a clear `Err(String)` — never a panic.
 #[tauri::command]
-pub async fn get_usage() -> Result<UsageSnapshot, String> {
-    fetch_snapshot().await
+pub async fn get_usage(cache: State<'_, UsageCache>) -> Result<UsageSnapshot, String> {
+    if let Some(snapshot) = cache.get() {
+        return Ok(snapshot);
+    }
+    let snapshot = fetch_snapshot().await?;
+    cache.set(snapshot.clone());
+    Ok(snapshot)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The cache starts empty and returns whatever was last stored.
+    #[test]
+    fn usage_cache_starts_empty_then_returns_last_set() {
+        let cache = UsageCache::default();
+        assert!(cache.get().is_none(), "fresh cache has no snapshot");
+
+        let snap = UsageSnapshot {
+            five_hour: UsageWindow {
+                utilization: 21.0,
+                resets_at: "2026-06-17T07:00:00Z".to_string(),
+            },
+            seven_day: UsageWindow {
+                utilization: 38.0,
+                resets_at: "2026-06-22T20:00:00Z".to_string(),
+            },
+        };
+        cache.set(snap);
+
+        let got = cache.get().expect("cache returns the stored snapshot");
+        assert_eq!(got.five_hour.utilization, 21.0);
+        assert_eq!(got.seven_day.utilization, 38.0);
+    }
+
+    /// The `claude --version` output is mined for the first semver token, used
+    /// to build the required `claude-code/<version>` User-Agent.
+    #[test]
+    fn parse_claude_version_extracts_first_semver() {
+        assert_eq!(
+            parse_claude_version("2.1.179 (Claude Code)").as_deref(),
+            Some("2.1.179")
+        );
+        assert_eq!(parse_claude_version("claude 1.2.3").as_deref(), Some("1.2.3"));
+        // Tolerates a leading `v` and a pre-release suffix.
+        assert_eq!(parse_claude_version("v2.0.10-beta").as_deref(), Some("2.0.10"));
+        // No semver present.
+        assert_eq!(parse_claude_version("unknown").as_deref(), None);
+        assert_eq!(parse_claude_version("").as_deref(), None);
+        // A two-part version is not accepted (needs major.minor.patch).
+        assert_eq!(parse_claude_version("1.2").as_deref(), None);
+    }
 
     /// A valid credentials blob yields the nested access token.
     #[test]

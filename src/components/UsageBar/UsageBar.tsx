@@ -57,7 +57,7 @@ function Window({ label, window }: { label: string; window: UsageWindow }) {
 
 function UsageBar() {
   const snapshot = useUsageStore((s) => s.snapshot);
-  const error = useUsageStore((s) => s.error);
+  const lastUpdated = useUsageStore((s) => s.lastUpdated);
   const applyUpdate = useUsageStore((s) => s.applyUpdate);
 
   // Prime once via getUsage(), then live-update from `usage://updated`,
@@ -83,17 +83,22 @@ function UsageBar() {
     };
   }, [applyUpdate]);
 
-  const unavailable = snapshot === null || error !== null;
-
   return (
     <footer className="usage-bar" aria-label="API usage">
-      {unavailable ? (
-        <span className="usage-bar-unavailable">usage unavailable</span>
-      ) : (
+      {snapshot ? (
+        // A snapshot is shown whenever we have one — it survives transient
+        // errors (last-good wins) so the meter never flickers to a failure
+        // state on a single missed poll.
         <>
           <Window label="5h" window={snapshot.fiveHour} />
           <Window label="wk" window={snapshot.sevenDay} />
         </>
+      ) : lastUpdated === null ? (
+        // Boot: the first fetch is in flight. Not a failure — don't cry wolf.
+        <span className="usage-bar-loading">loading usage…</span>
+      ) : (
+        // We tried at least once and have no data to show.
+        <span className="usage-bar-unavailable">usage unavailable</span>
       )}
     </footer>
   );

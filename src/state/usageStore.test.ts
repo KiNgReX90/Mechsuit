@@ -51,16 +51,24 @@ describe("usageStore", () => {
   });
 
   describe("applyUpdate — failure shape", () => {
-    it("sets error and clears snapshot on a failure update", () => {
+    it("keeps the last good snapshot on a failure update (transient blip)", () => {
       // First get a snapshot in place
       useUsageStore.getState().applyUpdate({ snapshot: mockSnapshot, error: null });
       expect(useUsageStore.getState().snapshot).toEqual(mockSnapshot);
 
-      // Now a failure
+      // A transient failure records the error but RETAINS the last good
+      // snapshot, so a single missed poll doesn't blank the meter.
       useUsageStore.getState().applyUpdate({ snapshot: null, error: "rate limited" });
       const state = useUsageStore.getState();
-      expect(state.snapshot).toBeNull();
+      expect(state.snapshot).toEqual(mockSnapshot);
       expect(state.error).toBe("rate limited");
+    });
+
+    it("leaves snapshot null when a failure arrives with no prior snapshot", () => {
+      useUsageStore.getState().applyUpdate({ snapshot: null, error: "offline" });
+      const state = useUsageStore.getState();
+      expect(state.snapshot).toBeNull();
+      expect(state.error).toBe("offline");
     });
 
     it("stamps lastUpdated on a failure update", () => {

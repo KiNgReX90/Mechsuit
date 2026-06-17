@@ -21,8 +21,10 @@ export interface UsageStoreState {
 
   /**
    * Apply a `UsageUpdate` event payload. On success (`snapshot` present) sets
-   * `snapshot` and clears `error`; on failure (`error` present) sets `error`
-   * and clears `snapshot`. Always stamps `lastUpdated`.
+   * `snapshot` and clears `error`; on failure (`error` present) records the
+   * `error` but **retains the last good snapshot** so a transient blip doesn't
+   * blank the meter — only when there has never been a snapshot does it stay
+   * null. Always stamps `lastUpdated`.
    */
   applyUpdate: (u: UsageUpdate) => void;
 }
@@ -36,7 +38,13 @@ export const useUsageStore = create<UsageStoreState>((set) => ({
     if (u.snapshot !== null) {
       set({ snapshot: u.snapshot, error: null, lastUpdated: Date.now() });
     } else {
-      set({ snapshot: null, error: u.error, lastUpdated: Date.now() });
+      // Retain the last good snapshot through a transient failure; only the
+      // error and timestamp change. A meter that has loaded once stays shown.
+      set((s) => ({
+        snapshot: s.snapshot,
+        error: u.error,
+        lastUpdated: Date.now(),
+      }));
     }
   },
 }));

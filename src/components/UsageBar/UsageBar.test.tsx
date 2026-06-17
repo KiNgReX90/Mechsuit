@@ -89,6 +89,35 @@ describe("UsageBar", () => {
     expect(critWindow).toHaveClass("usage-bar-window--crit");
   });
 
+  it("shows a loading line (not 'unavailable') before the first result", async () => {
+    // Never updated yet: no snapshot, no error, no lastUpdated, and the prime is
+    // still in flight — this is boot, not a failure.
+    useUsageStore.setState({ snapshot: null, error: null, lastUpdated: null });
+    mockedCommands.getUsage.mockReturnValue(new Promise(() => {}));
+
+    await renderSettled(<UsageBar />);
+
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.queryByText("usage unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps showing the last good snapshot even when an error is set", async () => {
+    // A prior good snapshot is retained through a transient error blip.
+    useUsageStore.setState({
+      snapshot,
+      error: "rate limited",
+      lastUpdated: Date.now(),
+    });
+    // Keep the seeded state (don't let the prime overwrite it).
+    mockedCommands.getUsage.mockReturnValue(new Promise(() => {}));
+
+    await renderSettled(<UsageBar />);
+
+    expect(screen.getByText("5h")).toBeInTheDocument();
+    expect(screen.getByText("49%")).toBeInTheDocument();
+    expect(screen.queryByText("usage unavailable")).not.toBeInTheDocument();
+  });
+
   it("renders a muted unavailable line when snapshot is null", async () => {
     useUsageStore.setState({ snapshot: null, error: null, lastUpdated: null });
     // A failing prime is swallowed into the error state — still unavailable.
