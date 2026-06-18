@@ -17,7 +17,7 @@ intents:
         depends_on: []
         checkpoint_1: approved
       - id: wi-03-node-status-rollup
-        status: pending
+        status: completed
         complexity: low
         depends_on: []
       - id: wi-04-graph-model-store
