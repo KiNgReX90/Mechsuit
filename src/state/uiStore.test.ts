@@ -34,6 +34,23 @@ describe("uiStore", () => {
     expect(useUiStore.getState().settingsOpen).toBe(false);
   });
 
+  it("starts with the sessions graph closed", () => {
+    expect(useUiStore.getState().graphOpen).toBe(false);
+  });
+
+  it("opens, closes, and toggles the sessions graph", () => {
+    useUiStore.getState().setGraphOpen(true);
+    expect(useUiStore.getState().graphOpen).toBe(true);
+
+    useUiStore.getState().setGraphOpen(false);
+    expect(useUiStore.getState().graphOpen).toBe(false);
+
+    useUiStore.getState().toggleGraph();
+    expect(useUiStore.getState().graphOpen).toBe(true);
+    useUiStore.getState().toggleGraph();
+    expect(useUiStore.getState().graphOpen).toBe(false);
+  });
+
   it("opens, closes, and toggles the Settings drawer", () => {
     useUiStore.getState().setSettingsOpen(true);
     expect(useUiStore.getState().settingsOpen).toBe(true);

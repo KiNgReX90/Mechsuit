@@ -31,7 +31,7 @@ beforeEach(() => {
   ipc.closeWindow.mockResolvedValue(undefined);
   ipc.isWindowMaximized.mockResolvedValue(false);
   ipc.onWindowResized.mockResolvedValue(() => {});
-  useUiStore.setState({ settingsOpen: false });
+  useUiStore.setState({ settingsOpen: false, graphOpen: false });
 });
 
 describe("TitleBar", () => {
@@ -90,5 +90,23 @@ describe("TitleBar", () => {
     });
 
     expect(useUiStore.getState().settingsOpen).toBe(true);
+  });
+
+  it("toggles the sessions graph from the graph control and reflects aria-expanded", async () => {
+    render(<TitleBar />);
+    const button = screen.getByRole("button", { name: "Sessions graph" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(useUiStore.getState().graphOpen).toBe(false);
+
+    // Wrap in act + flush so the click's subscribed re-render and the mount's
+    // async maximized-state read both settle inside act (pristine output).
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(useUiStore.getState().graphOpen).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Sessions graph" }),
+    ).toHaveAttribute("aria-expanded", "true");
   });
 });

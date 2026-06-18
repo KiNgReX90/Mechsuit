@@ -25,7 +25,7 @@ intents:
         complexity: medium
         depends_on: [wi-01-worktree-discovery, wi-02-subagent-detection, wi-03-node-status-rollup]
       - id: wi-05-topbar-screen-scaffold
-        status: pending
+        status: completed
         complexity: medium
         depends_on: []
       - id: wi-06-graph-view

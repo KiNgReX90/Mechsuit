@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Commander } from "./components/Commander";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SessionsGraph } from "./components/SessionsGraph";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
@@ -40,6 +41,8 @@ function App() {
   const toggleCommander = useUiStore((state) => state.toggleCommander);
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   const setSettingsOpen = useUiStore((state) => state.setSettingsOpen);
+  const graphOpen = useUiStore((state) => state.graphOpen);
+  const setGraphOpen = useUiStore((state) => state.setGraphOpen);
   const setSelectedDirectoryPath = useUiStore(
     (state) => state.setSelectedDirectoryPath,
   );
@@ -213,6 +216,12 @@ function App() {
             <Workspace />
           </ErrorBoundary>
         </main>
+        {/* Sessions graph is a full-body overlay over the sidebar+workspace row
+            (it fills `.app-body`, stopping above the usage footer), shown only
+            while `graphOpen`. Boundaried like the other regions. */}
+        <ErrorBoundary label="Sessions graph">
+          <SessionsGraph open={graphOpen} onClose={() => setGraphOpen(false)} />
+        </ErrorBoundary>
       </div>
       <ErrorBoundary label="Usage meter">
         <UsageBar />
