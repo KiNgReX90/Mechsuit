@@ -1,0 +1,85 @@
+/*
+ * WorkspaceBay: one titled workspace within the collected view. A header row
+ * (name + branch + spawn controls) sits above a flexible body that hosts the
+ * shared session <Grid>. The bay fills the height its parent allots and never
+ * scrolls itself — the grid manages its own tiling within the body.
+ */
+.workspace-bay {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.workspace-bay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(91, 140, 255, 0.08), transparent);
+}
+
+.workspace-bay-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.workspace-bay-name {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-bay-branch {
+  font-size: 0.78rem;
+  color: var(--text-dim, rgba(255, 255, 255, 0.55));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-bay-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.workspace-bay-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim, rgba(255, 255, 255, 0.6));
+  cursor: pointer;
+}
+
+.workspace-bay-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.workspace-bay-action--add {
+  color: var(--accent, #5b8cff);
+}
+
+.workspace-bay-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}

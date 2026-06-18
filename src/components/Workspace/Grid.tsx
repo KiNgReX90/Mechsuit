@@ -58,6 +58,12 @@ export interface GridProps {
   focusedSessionId: string | null;
   onExpand: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
+  /**
+   * Whether each tile shows the expand control. Defaults to `true` (the normal
+   * Workspace grid). The collected view passes `false` so its bays omit the
+   * per-tile expand-to-fill action.
+   */
+  showExpand?: boolean;
 }
 
 export function Grid({
@@ -65,6 +71,7 @@ export function Grid({
   focusedSessionId,
   onExpand,
   onClose,
+  showExpand = true,
 }: GridProps) {
   const statusBySession = useStatusStore((s) => s.statusBySession);
   const namesBySession = useSessionsStore((s) => s.namesBySession);
@@ -132,6 +139,7 @@ export function Grid({
                     onExpand={onExpand}
                     onCollapse={() => {}}
                     onClose={onClose}
+                    showExpand={showExpand}
                   />
                 </div>
                 {isPaused && (

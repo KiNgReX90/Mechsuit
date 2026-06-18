@@ -22,6 +22,7 @@ function renderActions(overrides: Partial<{
   onExpand: (id: string) => void;
   onCollapse: (id: string) => void;
   onClose: (id: string) => void;
+  showExpand: boolean;
 }> = {}) {
   const props = {
     sessionId: "s1",
@@ -141,5 +142,33 @@ describe("<SessionActions />", () => {
     expect(
       screen.getByRole("button", { name: "Collapse session" }).title,
     ).toBe("Collapse");
+  });
+
+  it("hides the expand button when showExpand is false, keeping the others", () => {
+    renderActions({ isExpanded: false, showExpand: false });
+    expect(
+      screen.queryByRole("button", { name: "Expand session s1" }),
+    ).toBeNull();
+    // The remaining controls are unaffected.
+    expect(screen.getByRole("button", { name: "Clear session s1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Compact session s1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close session s1" })).toBeTruthy();
+  });
+
+  it("hides the collapse button when showExpand is false even if expanded", () => {
+    renderActions({ isExpanded: true, showExpand: false });
+    expect(
+      screen.queryByRole("button", { name: "Collapse session" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Expand session s1" }),
+    ).toBeNull();
+  });
+
+  it("shows the expand button by default (showExpand omitted)", () => {
+    renderActions();
+    expect(
+      screen.getByRole("button", { name: "Expand session s1" }),
+    ).toBeTruthy();
   });
 });

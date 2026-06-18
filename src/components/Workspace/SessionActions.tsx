@@ -43,6 +43,12 @@ export interface SessionActionsProps {
   onCollapse: (sessionId: string) => void;
   /** Close (kill) this session. */
   onClose: (sessionId: string) => void;
+  /**
+   * Whether to render the expand/collapse control. Defaults to `true` (the
+   * normal Workspace grid). The collected view passes `false` so its tiles omit
+   * expand — there is no per-bay expand-to-fill in that layout.
+   */
+  showExpand?: boolean;
 }
 
 function stop(e: React.MouseEvent) {
@@ -55,6 +61,7 @@ export function SessionActions({
   onExpand,
   onCollapse,
   onClose,
+  showExpand = true,
 }: SessionActionsProps) {
   return (
     <div className="session-actions">
@@ -120,7 +127,8 @@ export function SessionActions({
         </svg>
       </button>
 
-      {isExpanded ? (
+      {showExpand &&
+        (isExpanded ? (
         <button
           type="button"
           className="session-action session-action--collapse"
@@ -176,7 +184,7 @@ export function SessionActions({
             />
           </svg>
         </button>
-      )}
+        ))}
 
       <button
         type="button"
