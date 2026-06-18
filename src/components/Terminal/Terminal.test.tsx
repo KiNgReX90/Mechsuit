@@ -63,11 +63,21 @@ beforeEach(() => {
       unobserve = vi.fn();
     },
   );
+  // Output writes are now coalesced per animation frame (terminalPool). vitest's
+  // jsdom backs rAF with a macrotask timer an awaited microtask won't drain, so
+  // swap in a microtask scheduler — one `await Promise.resolve()` drives a flush.
+  __setFlushScheduler({
+    schedule: (cb) => {
+      queueMicrotask(cb);
+      return 0;
+    },
+    cancel: () => {},
+  });
 });
 
 import { writeSession, resizeSession } from "../../ipc/commands";
 import { useStatusStore } from "../../state/statusStore";
-import { disposeTerminal } from "../../lib/terminalPool";
+import { __setFlushScheduler, disposeTerminal } from "../../lib/terminalPool";
 import { Terminal } from "./Terminal";
 
 afterEach(() => {
@@ -80,6 +90,7 @@ afterEach(() => {
   vi.clearAllMocks();
   outputCb = undefined;
   dataHandler = undefined;
+  __setFlushScheduler(); // restore the environment default
 });
 
 describe("<Terminal />", () => {
@@ -88,10 +99,11 @@ describe("<Terminal />", () => {
     expect(resizeSession).toHaveBeenCalledWith("s1", 80, 24);
   });
 
-  it("writes incoming output only for the matching sessionId", () => {
+  it("writes incoming output only for the matching sessionId", async () => {
     render(<Terminal sessionId="s1" />);
     outputCb?.({ sessionId: "s1", data: "hello" });
     outputCb?.({ sessionId: "other", data: "ignored" });
+    await Promise.resolve(); // drive the coalesced per-frame flush
     expect(writeSpy).toHaveBeenCalledTimes(1);
     expect(writeSpy).toHaveBeenCalledWith("hello");
   });
