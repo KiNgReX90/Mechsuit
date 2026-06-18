@@ -214,6 +214,9 @@
   flex-direction: column;
   gap: 0.35rem;
   overflow-y: auto;
+  /* Anchors the absolutely-positioned drag affordances (the insertion line and
+     the floating clone), which are top-offset in this list's coordinate space. */
+  position: relative;
 }
 
 .sidebar-directory-item {
@@ -522,4 +525,54 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Drag-to-reorder ─────────────────────────────────────────────────────────
+   The source row stays in place but is ghosted so the eye follows the floating
+   clone; a glowing insertion line marks where the drop will land. */
+
+/* The row being dragged: dimmed and de-emphasized while its clone leads the
+   cursor. It keeps its slot so the surrounding rows don't reflow mid-gesture. */
+.sidebar-directory-item--dragging {
+  opacity: 0.35;
+}
+
+.sidebar-directory-item--dragging .sidebar-directory-row {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
+/* Glowing insertion line marking the drop slot. Spans the list's inner width
+   and is lifted out of flow so it never nudges the rows it sits between. */
+.sidebar-drop-line {
+  position: absolute;
+  left: 0.55rem;
+  right: 0.55rem;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 8px 1px var(--accent), 0 0 2px 0 var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Floating clone of the dragged card, following the cursor. Purely visual —
+   never intercepts pointer events, so the gesture keeps reaching the window. */
+.sidebar-drag-clone {
+  position: absolute;
+  left: 0.55rem;
+  right: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-elev-3);
+  box-shadow: var(--shadow-1), 0 0 12px -2px var(--accent);
+  pointer-events: none;
+  z-index: 3;
+  /* Lifts slightly under the cursor so it reads as picked up off the list. */
+  transform: scale(1.02);
 }

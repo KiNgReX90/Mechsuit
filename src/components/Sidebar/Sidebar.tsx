@@ -260,8 +260,8 @@ function Sidebar() {
         </div>
       )}
 
-      <ul className="sidebar-list">
-        {directories.map((dir) => {
+      <ul className="sidebar-list" ref={drag.listRef}>
+        {directories.map((dir, index) => {
           const isActive = dir.path === selectedDirectoryPath;
           const edited = relativeTime(dir.lastModified);
           const stale = isStale(dir.lastModified);
@@ -270,8 +270,17 @@ function Sidebar() {
           const identity = directoryIdentity(dir);
           const hasMeta = Boolean(identity.folder || edited);
           const isConfirming = confirmingPath === dir.path;
+          const isDragging = drag.draggingPath === dir.path;
           return (
-            <li key={dir.path} className="sidebar-directory-item">
+            <li
+              key={dir.path}
+              ref={(el) => drag.registerRow(dir.path, el)}
+              className={
+                isDragging
+                  ? "sidebar-directory-item sidebar-directory-item--dragging"
+                  : "sidebar-directory-item"
+              }
+            >
               <div className="sidebar-directory-row">
                 <button
                   type="button"
@@ -281,7 +290,13 @@ function Sidebar() {
                       : "sidebar-directory"
                   }
                   aria-current={isActive ? "true" : undefined}
-                  onClick={() => setSelectedDirectoryPath(dir.path)}
+                  onPointerDown={(e) => drag.onRowPointerDown(index, e)}
+                  onClick={() => {
+                    // Suppress the click that trails a drag so a reorder never
+                    // also re-selects the row it just moved.
+                    if (drag.consumeClickSuppression()) return;
+                    setSelectedDirectoryPath(dir.path);
+                  }}
                 >
                   <span className="sidebar-directory-head">
                     {/* Leading identity glyph: a repository mark for git repos,
@@ -473,6 +488,43 @@ function Sidebar() {
             </li>
           );
         })}
+
+        {/* Glowing insertion line marking where the dragged button will land. */}
+        {drag.dropLineTop !== null && (
+          <div
+            className="sidebar-drop-line"
+            data-testid="sidebar-drop-line"
+            style={{ top: drag.dropLineTop }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Floating clone of the dragged button, following the cursor. */}
+        {drag.draggingPath !== null &&
+          drag.cloneTop !== null &&
+          (() => {
+            const dragging = directories.find(
+              (d) => d.path === drag.draggingPath,
+            );
+            if (!dragging) return null;
+            const cloneIdentity = directoryIdentity(dragging);
+            return (
+              <div
+                className="sidebar-drag-clone"
+                style={{ top: drag.cloneTop }}
+                aria-hidden="true"
+              >
+                <span className="sidebar-directory-name">
+                  {cloneIdentity.primary}
+                </span>
+                {dragging.isGitRepo && dragging.branch && (
+                  <span className="sidebar-directory-branch">
+                    {dragging.branch}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
       </ul>
     </div>
   );
