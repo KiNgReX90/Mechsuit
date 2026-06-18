@@ -13,6 +13,7 @@ mod models;
 mod pty;
 mod settings;
 mod usage;
+mod worktree;
 
 use std::time::Duration;
 
@@ -149,6 +150,7 @@ pub fn run() {
             pty::set_session_paused,
             commander::spawn_commander_session,
             usage::get_usage,
+            worktree::list_worktrees,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

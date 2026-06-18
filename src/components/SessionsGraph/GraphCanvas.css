@@ -1,0 +1,242 @@
+/*
+ * Sessions-graph canvas + node styling.
+ *
+ * The canvas is the pan/zoom viewport; `.graph-canvas-layer` is the single
+ * CSS-transformed layer that holds the SVG edge layer and the absolutely
+ * positioned nodes — pan/zoom mutates only its `transform`, never the layout.
+ *
+ * Pulses are PURELY CSS: `pulseFor` (wi-03) sets a `graph-node--{color}` class
+ * plus `graph-node--pulsing`; the keyframes below animate only compositor-
+ * friendly props (box-shadow/opacity) so dozens of pulsing nodes stay cheap.
+ * `ready`/gray carries no `--pulsing` class, so it is static by construction.
+ */
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0)
+      0 0 / 28px 28px;
+}
+
+.graph-canvas:active {
+  cursor: grabbing;
+}
+
+.graph-canvas-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* SVG edge layer sits beneath the nodes within the transformed layer. */
+.graph-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.graph-edge {
+  stroke: rgba(140, 165, 220, 0.4);
+  stroke-width: 1.6;
+}
+
+.graph-canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--text-dim, rgba(220, 228, 245, 0.55));
+  font-size: 0.95rem;
+}
+
+/* A node is centered on its (x, y); translate(-50%, -50%) anchors its middle. */
+.graph-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 168px;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(26, 33, 50, 0.95), rgba(18, 23, 36, 0.95));
+  color: var(--text, #e6ecf8);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.graph-node:hover {
+  border-color: rgba(140, 170, 255, 0.55);
+}
+
+.graph-node-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.graph-node-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-node-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * wi-07 control surface: inline pause/resume + kill on terminal nodes, plus the
+ * paused marker. Actions sit at the node's trailing edge; each is a small icon
+ * button that stops propagation so it never triggers navigate/pan.
+ */
+.graph-node-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: 0.15rem;
+}
+
+.node-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim, rgba(220, 228, 245, 0.7));
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.node-action:hover {
+  border-color: rgba(140, 170, 255, 0.55);
+  color: var(--text, #e6ecf8);
+}
+
+.node-action--resume {
+  color: #7fd0a0;
+}
+
+.node-action--kill:hover,
+.node-action--kill-confirm {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #f87171;
+}
+
+.node-action--kill-confirm {
+  font-weight: 600;
+}
+
+/* Paused terminal nodes are visibly marked and read dimmer. */
+.graph-node--paused {
+  opacity: 0.78;
+}
+
+.graph-node-paused-badge {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.3rem;
+  border-radius: 5px;
+  background: rgba(251, 176, 64, 0.18);
+  color: #fbb040;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Kind tints the icon so the four kinds read apart at a glance. */
+.graph-node--repo .graph-node-icon {
+  color: #8fb4ff;
+}
+.graph-node--worktree .graph-node-icon {
+  color: #7fd0c0;
+}
+.graph-node--terminal .graph-node-icon {
+  color: #cdd6ec;
+}
+.graph-node--subagent .graph-node-icon {
+  color: #d9b3ff;
+}
+
+/*
+ * Status pulse. The color class sets the accent ring; `--pulsing` opts the node
+ * into the matching keyframe. Gray (ready) sets a static ring and never pulses.
+ */
+.graph-node--gray {
+  box-shadow: 0 0 0 1px rgba(150, 160, 180, 0.25);
+}
+
+.graph-node--green.graph-node--pulsing {
+  animation: graph-pulse-green 1.8s ease-in-out infinite;
+}
+.graph-node--orange.graph-node--pulsing {
+  animation: graph-pulse-orange 1.6s ease-in-out infinite;
+}
+.graph-node--red.graph-node--pulsing {
+  animation: graph-pulse-red 1.2s ease-in-out infinite;
+}
+
+@keyframes graph-pulse-green {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(76, 222, 128, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 14px 2px rgba(76, 222, 128, 0.6);
+  }
+}
+
+@keyframes graph-pulse-orange {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(251, 176, 64, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 14px 2px rgba(251, 176, 64, 0.65);
+  }
+}
+
+@keyframes graph-pulse-red {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 16px 3px rgba(248, 113, 113, 0.75);
+  }
+}
+
+/* Respect reduced-motion: hold the lit state instead of animating. */
+@media (prefers-reduced-motion: reduce) {
+  .graph-node--pulsing {
+    animation: none;
+  }
+  .graph-node--green.graph-node--pulsing {
+    box-shadow: 0 0 12px 1px rgba(76, 222, 128, 0.55);
+  }
+  .graph-node--orange.graph-node--pulsing {
+    box-shadow: 0 0 12px 1px rgba(251, 176, 64, 0.55);
+  }
+  .graph-node--red.graph-node--pulsing {
+    box-shadow: 0 0 12px 1px rgba(248, 113, 113, 0.6);
+  }
+}

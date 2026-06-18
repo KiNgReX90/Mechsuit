@@ -33,6 +33,23 @@ export interface DiscoveredDir {
   alreadyManaged: boolean;
 }
 
+/**
+ * A git worktree of a managed repository, enumerated from
+ * `git worktree list --porcelain`. Mirrors the Rust `WorktreeInfo` (camelCase).
+ */
+export interface WorktreeInfo {
+  /** Absolute path of the worktree's working directory. */
+  path: string;
+  /** Checked-out branch name (no `refs/heads/` prefix); null for detached HEAD. */
+  branch: string | null;
+  /** HEAD commit SHA; null when the record carries no HEAD (e.g. bare repo). */
+  head: string | null;
+  /** True for the repository's primary (first) worktree. */
+  isPrimary: boolean;
+  /** Path of the worktree this one is nested under, or null when not nested. */
+  parentPath: string | null;
+}
+
 /** Kind of PTY session: a normal workspace pane, or the singular Commander. */
 export type SessionKind = "workspace" | "commander";
 
@@ -58,6 +75,23 @@ export interface ExitEvent {
 
 /** Derived status for a single PTY session, emitted by the status engine. */
 export type SessionStatus = "working" | "awaiting-approval" | "ready" | "error";
+
+/**
+ * One subagent (a Claude Code Task invocation) of a live session, derived from
+ * that session's PTY output stream and held in `subagentStore` keyed by
+ * sessionId. Flat for v1 (one observable level — a parent terminal never renders
+ * a subagent's own subagents). `status` reuses {@link SessionStatus}: a running
+ * Task maps to `working`, a finished one to `ready`, a failed one to `error`
+ * (`awaiting-approval` is a main-session state, never a subagent state).
+ */
+export interface SubagentNode {
+  /** Stable id of this subagent within its session (assigned in render order). */
+  id: string;
+  /** The Task `subagent_type` / description the TUI exposed, else `"subagent"`. */
+  label: string;
+  /** Coarse lifecycle state of the Task. */
+  status: SessionStatus;
+}
 
 /** Per-session status record held in statusStore. */
 export interface SessionStatusState {

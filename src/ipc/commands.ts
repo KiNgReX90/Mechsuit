@@ -7,7 +7,14 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-import type { AppSettings, DirectoryInfo, DiscoveredDir, SessionInfo, UsageSnapshot } from "../types";
+import type {
+  AppSettings,
+  DirectoryInfo,
+  DiscoveredDir,
+  SessionInfo,
+  UsageSnapshot,
+  WorktreeInfo,
+} from "../types";
 
 /** Add a directory to the managed list, returning its resolved info. */
 export function addDirectory(path: string): Promise<DirectoryInfo> {
@@ -95,4 +102,13 @@ export function getUsage(): Promise<UsageSnapshot> {
 /** Pause (true) or resume (false) a single session by id. */
 export function setSessionPaused(sessionId: string, paused: boolean): Promise<void> {
   return invoke<void>("set_session_paused", { sessionId, paused });
+}
+
+/**
+ * List the git worktrees of the managed repository at `repoPath` — the primary
+ * worktree plus any linked worktrees. A non-git directory or any git failure
+ * resolves to an empty array (never rejects).
+ */
+export function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
+  return invoke<WorktreeInfo[]>("list_worktrees", { repoPath });
 }

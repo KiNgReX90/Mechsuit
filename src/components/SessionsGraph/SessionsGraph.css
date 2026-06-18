@@ -1,0 +1,59 @@
+/*
+ * Sessions graph screen: a full-body overlay that fills `.app-body` (which is
+ * position: relative) over the sidebar + workspace row, stopping above the slim
+ * usage footer. Unlike the Commander drawer it covers the whole body rather than
+ * sliding in from one edge. Rendered only while open, so no slide transition is
+ * needed — it is mounted/unmounted by the host.
+ */
+.sessions-graph {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(13, 17, 28, 0.98), rgba(10, 13, 22, 0.98));
+  color: var(--text);
+  overflow: hidden;
+}
+
+.sessions-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(91, 140, 255, 0.1), transparent);
+}
+
+.sessions-graph-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.sessions-graph-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim, var(--text));
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sessions-graph-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* Canvas slot: fills the remaining body height for the graph renderer. */
+.sessions-graph-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}

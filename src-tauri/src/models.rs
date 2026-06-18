@@ -36,6 +36,26 @@ pub struct SessionInfo {
     pub kind: SessionKind,
 }
 
+/// A git worktree of a managed repository, as enumerated by
+/// `git worktree list --porcelain`. One per record in that output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeInfo {
+    /// Absolute path of the worktree's working directory.
+    pub path: String,
+    /// Checked-out branch name (no `refs/heads/` prefix), or `None` for a
+    /// detached HEAD.
+    pub branch: Option<String>,
+    /// HEAD commit SHA, or `None` when the record carries no `HEAD` line
+    /// (e.g. a bare repository).
+    pub head: Option<String>,
+    /// `true` for the repository's primary (first) worktree.
+    pub is_primary: bool,
+    /// Path of the worktree this one is nested under (a strict path-prefix
+    /// ancestor within the returned set), or `None` when not nested.
+    pub parent_path: Option<String>,
+}
+
 /// Persisted application settings.
 ///
 /// `workspace_root` is the directory discovery scans when no explicit root is

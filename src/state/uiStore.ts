@@ -18,6 +18,8 @@ export interface UiState {
   commanderOpen: boolean;
   /** Whether the Settings drawer is open. Closed by default. */
   settingsOpen: boolean;
+  /** Whether the sessions graph screen is open. Closed by default. */
+  graphOpen: boolean;
 
   setSelectedDirectoryPath: (path: string | null) => void;
   setFocusedSessionId: (sessionId: string | null) => void;
@@ -26,6 +28,8 @@ export interface UiState {
   toggleCommander: () => void;
   setSettingsOpen: (open: boolean) => void;
   toggleSettings: () => void;
+  setGraphOpen: (open: boolean) => void;
+  toggleGraph: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -34,6 +38,7 @@ export const useUiStore = create<UiState>((set) => ({
   expandedSessionId: null,
   commanderOpen: false,
   settingsOpen: false,
+  graphOpen: false,
 
   setSelectedDirectoryPath: (path) => set({ selectedDirectoryPath: path }),
   setFocusedSessionId: (sessionId) => set({ focusedSessionId: sessionId }),
@@ -43,4 +48,6 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({ commanderOpen: !state.commanderOpen })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   toggleSettings: () => set((state) => ({ settingsOpen: !state.settingsOpen })),
+  setGraphOpen: (open) => set({ graphOpen: open }),
+  toggleGraph: () => set((state) => ({ graphOpen: !state.graphOpen })),
 }));
