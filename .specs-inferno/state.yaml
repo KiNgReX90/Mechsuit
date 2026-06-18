@@ -2,9 +2,9 @@ version: 1
 intents:
   - id: sessions-graph
     title: Live Sessions Graph — Mission Control
-    status: in_progress
+    status: completed
     claimed_at: 2026-06-18T03:14:25Z
-    claimed_by: inferno-intent/sessions-graph-20260618-031425
+    completed_at: 2026-06-18T03:49:07Z
     created: 2026-06-17
     work_items:
       - id: wi-01-worktree-discovery
