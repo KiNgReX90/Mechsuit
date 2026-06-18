@@ -62,9 +62,9 @@ intents:
         depends_on: [wi-01-entry-scaffold, wi-02-active-workspaces-hook, wi-03-workspace-bay]
   - id: terminal-perf
     title: Terminal Performance — Input Lag, Cursor Drift & Misrouted Input
-    status: in_progress
+    status: completed
     claimed_at: 2026-06-18T13:14:33Z
-    claimed_by: inferno-intent/terminal-perf-20260618-131433
+    completed_at: 2026-06-18T13:39:37Z
     created: 2026-06-18
     work_items:
       - id: wi-01-renderer-coalesce
