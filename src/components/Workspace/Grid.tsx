@@ -8,15 +8,9 @@
  * workspace. Only the focused tile forwards keyboard input — non-focused tiles
  * swallow keydown events at the capture phase so their Terminal never sees them.
  */
-import { Terminal } from "../Terminal";
 import type { SessionInfo, SessionStatusState } from "../../types";
 import { computeGridLayout } from "../../lib/gridLayout";
-import { useStatusStore } from "../../state/statusStore";
-import { useSessionsStore } from "../../state/sessionsStore";
-import { usePausedStore } from "../../state/pausedStore";
-import { setSessionPaused } from "../../ipc/commands";
-import { focusSession } from "../../lib/focusSession";
-import { SessionActions } from "./SessionActions";
+import { GridTile } from "./GridTile";
 
 /** A status that warrants a visible color cue (the alert-worthy states). */
 export type TileStatusKind = "ready" | "awaiting-approval" | "error";
@@ -66,9 +60,6 @@ export function Grid({
   onExpand,
   onClose,
 }: GridProps) {
-  const statusBySession = useStatusStore((s) => s.statusBySession);
-  const namesBySession = useSessionsStore((s) => s.namesBySession);
-  const pausedIds = usePausedStore((s) => s.pausedIds);
   const { rows } = computeGridLayout(sessions.length);
 
   // Walk the layout rows, slicing sessions into each row in order.
@@ -87,73 +78,15 @@ export function Grid({
           data-testid="workspace-grid-row"
           key={rowIndex}
         >
-          {rowSessions.map((session) => {
-            const isFocused = session.id === focusedSessionId;
-            const isPaused = pausedIds.has(session.id);
-            // FOCUS WINS: a focused tile shows only the accent border, never a
-            // status color; status still lives in the store for other readers.
-            const statusClass = isFocused
-              ? null
-              : tileStatusClass(statusBySession[session.id]);
-            const className = [
-              "workspace-tile",
-              isFocused ? "workspace-tile--focused" : null,
-              statusClass,
-              isPaused ? "workspace-tile--paused" : null,
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <div
-                className={className}
-                data-testid="workspace-tile"
-                data-session-id={session.id}
-                data-focused={isFocused ? "true" : "false"}
-                key={session.id}
-                // Switch focus to this tile: clears its screen when switching
-                // in (Ctrl+L), selects it, and pulls DOM focus — the same
-                // routine Shift+Arrow navigation uses (see focusSession).
-                onClick={() => focusSession(session.id)}
-                // Only the focused tile forwards keystrokes to its Terminal;
-                // others stop input at the capture phase before it reaches xterm.
-                onKeyDownCapture={(e) => {
-                  if (!isFocused) {
-                    e.stopPropagation();
-                  }
-                }}
-              >
-                <div className="workspace-tile-header">
-                  <span className="workspace-tile-name" title={namesBySession[session.id]}>
-                    {namesBySession[session.id]}
-                  </span>
-                  <SessionActions
-                    sessionId={session.id}
-                    isExpanded={false}
-                    onExpand={onExpand}
-                    onCollapse={() => {}}
-                    onClose={onClose}
-                  />
-                </div>
-                {isPaused && (
-                  <div className="workspace-tile-paused" data-testid="tile-paused">
-                    <span className="workspace-tile-paused-badge">Paused</span>
-                    <button
-                      type="button"
-                      className="workspace-tile-resume"
-                      aria-label={`Resume session ${session.id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void setSessionPaused(session.id, false);
-                      }}
-                    >
-                      Resume
-                    </button>
-                  </div>
-                )}
-                <Terminal sessionId={session.id} focused={isFocused} />
-              </div>
-            );
-          })}
+          {rowSessions.map((session) => (
+            <GridTile
+              key={session.id}
+              session={session}
+              isFocused={session.id === focusedSessionId}
+              onExpand={onExpand}
+              onClose={onClose}
+            />
+          ))}
         </div>
       ))}
     </div>

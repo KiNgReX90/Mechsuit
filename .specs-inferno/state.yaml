@@ -72,7 +72,7 @@ intents:
         complexity: medium
         depends_on: []
       - id: wi-02-scoped-status-subscriptions
-        status: pending
+        status: completed
         complexity: low
         depends_on: []
       - id: wi-03-input-routing-hardening
