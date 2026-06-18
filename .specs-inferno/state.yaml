@@ -34,6 +34,6 @@ intents:
         depends_on: [wi-04-graph-model-store, wi-05-topbar-screen-scaffold, wi-03-node-status-rollup]
         checkpoint_1: approved
       - id: wi-07-node-control-surface
-        status: pending
+        status: completed
         complexity: medium
         depends_on: [wi-06-graph-view]

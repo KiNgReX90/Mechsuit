@@ -100,6 +100,69 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * wi-07 control surface: inline pause/resume + kill on terminal nodes, plus the
+ * paused marker. Actions sit at the node's trailing edge; each is a small icon
+ * button that stops propagation so it never triggers navigate/pan.
+ */
+.graph-node-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: 0.15rem;
+}
+
+.node-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim, rgba(220, 228, 245, 0.7));
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.node-action:hover {
+  border-color: rgba(140, 170, 255, 0.55);
+  color: var(--text, #e6ecf8);
+}
+
+.node-action--resume {
+  color: #7fd0a0;
+}
+
+.node-action--kill:hover,
+.node-action--kill-confirm {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #f87171;
+}
+
+.node-action--kill-confirm {
+  font-weight: 600;
+}
+
+/* Paused terminal nodes are visibly marked and read dimmer. */
+.graph-node--paused {
+  opacity: 0.78;
+}
+
+.graph-node-paused-badge {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.3rem;
+  border-radius: 5px;
+  background: rgba(251, 176, 64, 0.18);
+  color: #fbb040;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Kind tints the icon so the four kinds read apart at a glance. */
 .graph-node--repo .graph-node-icon {
   color: #8fb4ff;
