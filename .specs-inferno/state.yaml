@@ -12,7 +12,7 @@ intents:
         complexity: medium
         depends_on: []
       - id: wi-02-subagent-detection
-        status: pending
+        status: completed
         complexity: medium
         depends_on: []
         checkpoint_1: approved
