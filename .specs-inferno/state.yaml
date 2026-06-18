@@ -29,7 +29,7 @@ intents:
         complexity: medium
         depends_on: []
       - id: wi-06-graph-view
-        status: pending
+        status: completed
         complexity: high
         depends_on: [wi-04-graph-model-store, wi-05-topbar-screen-scaffold, wi-03-node-status-rollup]
         checkpoint_1: approved

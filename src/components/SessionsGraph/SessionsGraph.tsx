@@ -2,6 +2,9 @@ import { useEffect } from "react";
 
 import "./SessionsGraph.css";
 
+import { startGraphEngine } from "../../state/graphStore";
+import { GraphCanvas } from "./GraphCanvas";
+
 export interface SessionsGraphProps {
   /** Whether the graph screen is shown over the workspace body. */
   open: boolean;
@@ -32,6 +35,16 @@ export function SessionsGraph({ open, onClose }: SessionsGraphProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  // Graph liveness is tied to the screen's lifetime: starting the engine here
+  // (only while open) makes it own the store subscriptions + the subagent
+  // engine for exactly as long as the graph is visible, and dispose them on
+  // close. The canvas (GraphCanvas) just subscribes the resulting store.
+  useEffect(() => {
+    if (!open) return;
+    const engine = startGraphEngine();
+    return () => engine.dispose();
+  }, [open]);
+
   if (!open) return null;
 
   return (
@@ -52,8 +65,10 @@ export function SessionsGraph({ open, onClose }: SessionsGraphProps) {
         </button>
       </div>
 
-      {/* Canvas slot: a later item mounts the graph renderer here. */}
-      <div className="sessions-graph-canvas" />
+      {/* Canvas slot: the graph renderer (wi-06) mounts here. */}
+      <div className="sessions-graph-canvas">
+        <GraphCanvas />
+      </div>
     </section>
   );
 }
