@@ -48,6 +48,13 @@ function paneFor(sessionId: string): HTMLElement {
     .find((t) => t.getAttribute("data-session-id") === sessionId)!;
 }
 
+/** The grid tile element for a session (the focus trigger target). */
+function tileFor(sessionId: string): HTMLElement {
+  return screen
+    .getAllByTestId("workspace-tile")
+    .find((t) => t.getAttribute("data-session-id") === sessionId)!;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useSessionsStore.setState({ sessionsByDirectory: {}, namesBySession: {} });
@@ -119,6 +126,36 @@ describe("Shift+Arrow grid navigation", () => {
       shiftKey: true,
     });
     expect(useUiStore.getState().focusedSessionId).toBe("a");
+  });
+});
+
+describe("tile focus trigger (pointer-down)", () => {
+  it("claims focus on pointer-down (before the click fires)", async () => {
+    await renderThree("a");
+    fireEvent.pointerDown(tileFor("b"));
+    expect(useUiStore.getState().focusedSessionId).toBe("b");
+  });
+
+  it("sends Ctrl+L to the newly focused tile on pointer-down", async () => {
+    await renderThree("a");
+    fireEvent.pointerDown(tileFor("b"));
+    expect(mockedCommands.writeSession).toHaveBeenCalledWith("b", "\f");
+  });
+
+  it("still focuses on a bare click (fallback path, no pointer-down)", async () => {
+    await renderThree("a");
+    fireEvent.click(tileFor("b"));
+    expect(useUiStore.getState().focusedSessionId).toBe("b");
+  });
+
+  it("a real pointer-down then click does not send Ctrl+L twice", async () => {
+    await renderThree("a");
+    fireEvent.pointerDown(tileFor("b"));
+    fireEvent.click(tileFor("b"));
+    const clears = mockedCommands.writeSession.mock.calls.filter(
+      ([id, data]) => id === "b" && data === "\f",
+    );
+    expect(clears).toHaveLength(1);
   });
 });
 

@@ -23,7 +23,9 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import { resizeSession, writeSession } from "../ipc/commands";
 import { onSessionOutput } from "../ipc/events";
+import { useSessionsStore } from "../state/sessionsStore";
 import { useStatusStore } from "../state/statusStore";
+import { useUiStore } from "../state/uiStore";
 
 /** Handle to a session's live terminal, returned by {@link acquireTerminal}. */
 export interface TerminalPane {
@@ -140,6 +142,37 @@ const TERMINAL_THEME = {
 
 const pool = new Map<string, PoolEntry>();
 
+/**
+ * Input gate (defense-in-depth against keystroke misrouting). Decides whether a
+ * keystroke that fired on `sessionId`'s xterm should be forwarded to its PTY.
+ *
+ * The bug this guards: typing into grid pane A, then clicking pane B, can — under
+ * residual main-thread jank — deliver A's in-flight characters after DOM focus
+ * has already moved to B, injecting them into B's live agent. So a grid pane that
+ * is NOT the current active session drops the stray input instead of writing it.
+ *
+ * "Active session" = `expandedSessionId` when set, else `focusedSessionId` (read
+ * live from the store, like `useGridNavigation`, so the handler always sees the
+ * current selection). Only GRID/workspace panes are gated: the Commander PTY and
+ * any other session not tracked in a directory's list are never in the focus
+ * model, so they always forward (gating them would mute the Commander terminal).
+ * When the app has no active selection at all, nothing is dropped.
+ */
+function shouldForwardInput(sessionId: string): boolean {
+  const ui = useUiStore.getState();
+  const active = ui.expandedSessionId ?? ui.focusedSessionId;
+  // No active selection → no opinion; never drop input.
+  if (active == null) return true;
+  if (sessionId === active) return true;
+  // Gate only grid/workspace panes. A session absent from every directory list
+  // (e.g. the Commander PTY) is outside the grid focus model — always forward.
+  const byDir = useSessionsStore.getState().sessionsByDirectory;
+  const isGridPane = Object.values(byDir).some((sessions) =>
+    sessions.some((s) => s.id === sessionId),
+  );
+  return !isGridPane;
+}
+
 // A SINGLE `session://output` subscription feeds the whole pool. Each output
 // event carries its `sessionId`, so one listener routes the chunk to the right
 // entry via an O(1) map lookup. Registering one listener per terminal instead
@@ -222,6 +255,11 @@ function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
   // transition will blink even if it was already acknowledged. Incidental input
   // (plain chars, focus-tracking escapes) carries no CR, so it never re-arms.
   const dataDisposable = term.onData((data) => {
+    // Belt-and-suspenders against misrouting: a grid pane that isn't the active
+    // session drops stray keystrokes rather than injecting them into a
+    // background agent (see `shouldForwardInput`). Dropping a few stray chars is
+    // strictly safer than typing into the wrong live session.
+    if (!shouldForwardInput(sessionId)) return;
     if (data.includes("\r")) {
       useStatusStore.getState().markPrompted(sessionId);
     }

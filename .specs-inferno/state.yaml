@@ -76,6 +76,6 @@ intents:
         complexity: low
         depends_on: []
       - id: wi-03-input-routing-hardening
-        status: pending
+        status: completed
         complexity: medium
         depends_on: [wi-01-renderer-coalesce, wi-02-scoped-status-subscriptions]

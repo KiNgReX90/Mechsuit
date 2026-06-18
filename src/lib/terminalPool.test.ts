@@ -85,6 +85,9 @@ vi.mock("../ipc/commands", () => ({
 
 import { resizeSession, writeSession } from "../ipc/commands";
 import { onSessionOutput } from "../ipc/events";
+import { useSessionsStore } from "../state/sessionsStore";
+import { useStatusStore } from "../state/statusStore";
+import { useUiStore } from "../state/uiStore";
 import {
   __setFlushScheduler,
   acquireTerminal,
@@ -92,6 +95,17 @@ import {
   focusTerminal,
   releaseTerminal,
 } from "./terminalPool";
+
+/** Mark a set of session ids as grid/workspace panes (subject to the input
+ *  gate) and select the active one, mirroring the live uiStore/sessionsStore. */
+function seedActive(active: string | null, gridIds: string[]): void {
+  useSessionsStore.setState({
+    sessionsByDirectory: {
+      "/repo": gridIds.map((id) => ({ id, dirPath: "/repo" })),
+    },
+  });
+  useUiStore.setState({ focusedSessionId: active, expandedSessionId: null });
+}
 
 function newContainer(): HTMLDivElement {
   const el = document.createElement("div");
@@ -119,6 +133,7 @@ afterEach(() => {
   // subscription is released once the pool empties).
   disposeTerminal("p1");
   disposeTerminal("p2");
+  disposeTerminal("cmd");
   vi.clearAllMocks();
   constructed = 0;
   canvasConstructed = 0;
@@ -126,6 +141,8 @@ afterEach(() => {
   dataHandler = undefined;
   document.body.innerHTML = "";
   __setFlushScheduler(); // restore the environment default
+  useSessionsStore.setState({ sessionsByDirectory: {} });
+  useUiStore.setState({ focusedSessionId: null, expandedSessionId: null });
 });
 
 describe("terminalPool", () => {
@@ -216,6 +233,62 @@ describe("terminalPool", () => {
     acquireTerminal("p1", newContainer());
     dataHandler?.("x");
     expect(writeSession).toHaveBeenCalledWith("p1", "x");
+  });
+
+  // --- input gate: only the active session forwards keystrokes --------------
+
+  it("forwards input from the active (focused) grid pane", () => {
+    seedActive("p1", ["p1", "p2"]);
+    acquireTerminal("p1", newContainer());
+    dataHandler?.("x");
+    expect(writeSession).toHaveBeenCalledWith("p1", "x");
+  });
+
+  it("drops stray input from a non-active grid pane (never reaches its PTY)", () => {
+    // p2 is a real grid pane but p1 is the active one: a late keystroke that
+    // lands on p2 after a click moved focus must NOT be written to p2's agent.
+    seedActive("p1", ["p1", "p2"]);
+    acquireTerminal("p2", newContainer());
+    dataHandler?.("stray");
+    expect(writeSession).not.toHaveBeenCalled();
+  });
+
+  it("a dropped carriage return on a non-active pane does not arm its prompt re-alert", () => {
+    seedActive("p1", ["p1", "p2"]);
+    acquireTerminal("p2", newContainer());
+    const markPrompted = vi.spyOn(useStatusStore.getState(), "markPrompted");
+    dataHandler?.("\r");
+    expect(markPrompted).not.toHaveBeenCalled();
+    expect(writeSession).not.toHaveBeenCalled();
+    markPrompted.mockRestore();
+  });
+
+  it("forwards input when the active pane is the expanded session", () => {
+    seedActive(null, ["p1", "p2"]);
+    useUiStore.setState({ expandedSessionId: "p2" });
+    acquireTerminal("p2", newContainer());
+    dataHandler?.("e");
+    expect(writeSession).toHaveBeenCalledWith("p2", "e");
+  });
+
+  it("does not gate the Commander session (it is not a grid pane)", () => {
+    // The Commander PTY is never in any directory's session list and never the
+    // focused/expanded grid session, so its input must always forward even
+    // while a grid pane is the active one.
+    seedActive("p1", ["p1"]);
+    acquireTerminal("cmd", newContainer());
+    dataHandler?.("voice");
+    expect(writeSession).toHaveBeenCalledWith("cmd", "voice");
+  });
+
+  it("still markPrompts and forwards on carriage return for the active pane", () => {
+    seedActive("p1", ["p1"]);
+    acquireTerminal("p1", newContainer());
+    const markPrompted = vi.spyOn(useStatusStore.getState(), "markPrompted");
+    dataHandler?.("ls\r");
+    expect(markPrompted).toHaveBeenCalledWith("p1");
+    expect(writeSession).toHaveBeenCalledWith("p1", "ls\r");
+    markPrompted.mockRestore();
   });
 
   it("pane.fit resizes the PTY to the terminal's dimensions", () => {

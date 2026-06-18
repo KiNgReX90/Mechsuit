@@ -68,10 +68,22 @@ export function GridTile({ session, isFocused, onExpand, onClose }: GridTileProp
       data-testid="workspace-tile"
       data-session-id={session.id}
       data-focused={isFocused ? "true" : "false"}
-      // Switch focus to this tile: clears its screen when switching
-      // in (Ctrl+L), selects it, and pulls DOM focus — the same
-      // routine Shift+Arrow navigation uses (see focusSession).
-      onClick={() => focusSession(session.id)}
+      // Claim focus as EARLY in the input sequence as possible — on
+      // pointer-down, before the subsequent click and before any in-flight
+      // keystroke from another pane can be processed. This pulls DOM focus onto
+      // this terminal up front, shrinking the race window in which a stray
+      // character could land in the wrong session. Uses the same routine
+      // Shift+Arrow navigation does (clears via Ctrl+L on switch, selects, and
+      // grabs DOM focus — see focusSession).
+      onPointerDown={() => focusSession(session.id)}
+      // Click is a harmless fallback for input paths that don't emit
+      // pointerdown (e.g. synthetic clicks in tests, keyboard activation): it
+      // only acts when this tile isn't already focused, so a real
+      // pointerdown→click never double-fires focus (and never sends a second
+      // Ctrl+L). focusSession is itself idempotent for the focused session.
+      onClick={() => {
+        if (!isFocused) focusSession(session.id);
+      }}
       // Only the focused tile forwards keystrokes to its Terminal;
       // others stop input at the capture phase before it reaches xterm.
       onKeyDownCapture={(e) => {
