@@ -100,6 +100,8 @@ describe("App shell", () => {
       selectedDirectoryPath: null,
       commanderOpen: false,
       settingsOpen: false,
+      graphOpen: false,
+      collectedOpen: false,
     });
     useDirectoriesStore.setState({ directories: [] });
     useSessionsStore.setState({ sessionsByDirectory: {} });
@@ -126,6 +128,31 @@ describe("App shell", () => {
     expect(
       screen.getByRole("dialog", { name: "Commander" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the collected view overlay inside .app-body when open", async () => {
+    useUiStore.setState({ collectedOpen: true });
+    render(<App />);
+
+    const dialog = screen.getByRole("dialog", { name: "Collected view" });
+    const appBody = document.querySelector(".app-body");
+    expect(appBody).not.toBeNull();
+    expect(appBody).toContainElement(dialog);
+
+    // The closed graph overlay must not render alongside it.
+    expect(screen.queryByRole("dialog", { name: "Sessions graph" })).toBeNull();
+    await act(async () => {});
+  });
+
+  it("does not render the collected view overlay when closed", async () => {
+    render(<App />);
+    expect(
+      screen.queryByRole("dialog", { name: "Collected view" }),
+    ).toBeNull();
+    // The normal sidebar+workspace still show.
+    expect(screen.getByLabelText("Workspaces")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workspace")).toBeInTheDocument();
+    await act(async () => {});
   });
 
   it("mounts the Settings drawer inside .app-body, not the sidebar", async () => {

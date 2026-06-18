@@ -2,6 +2,7 @@ import "./App.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { CollectedWorkspace } from "./components/CollectedWorkspace";
 import { Commander } from "./components/Commander";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SessionsGraph } from "./components/SessionsGraph";
@@ -43,6 +44,8 @@ function App() {
   const setSettingsOpen = useUiStore((state) => state.setSettingsOpen);
   const graphOpen = useUiStore((state) => state.graphOpen);
   const setGraphOpen = useUiStore((state) => state.setGraphOpen);
+  const collectedOpen = useUiStore((state) => state.collectedOpen);
+  const setCollectedOpen = useUiStore((state) => state.setCollectedOpen);
   const setSelectedDirectoryPath = useUiStore(
     (state) => state.setSelectedDirectoryPath,
   );
@@ -221,6 +224,16 @@ function App() {
             while `graphOpen`. Boundaried like the other regions. */}
         <ErrorBoundary label="Sessions graph">
           <SessionsGraph open={graphOpen} onClose={() => setGraphOpen(false)} />
+        </ErrorBoundary>
+        {/* Collected view is the other full-body overlay over the
+            sidebar+workspace row (mutually exclusive with the graph via the
+            uiStore setters), shown only while `collectedOpen`. Boundaried like
+            the other regions. */}
+        <ErrorBoundary label="Collected view">
+          <CollectedWorkspace
+            open={collectedOpen}
+            onClose={() => setCollectedOpen(false)}
+          />
         </ErrorBoundary>
       </div>
       <ErrorBoundary label="Usage meter">

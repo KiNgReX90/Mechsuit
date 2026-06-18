@@ -31,7 +31,7 @@ beforeEach(() => {
   ipc.closeWindow.mockResolvedValue(undefined);
   ipc.isWindowMaximized.mockResolvedValue(false);
   ipc.onWindowResized.mockResolvedValue(() => {});
-  useUiStore.setState({ settingsOpen: false, graphOpen: false });
+  useUiStore.setState({ settingsOpen: false, graphOpen: false, collectedOpen: false });
 });
 
 describe("TitleBar", () => {
@@ -107,6 +107,24 @@ describe("TitleBar", () => {
     expect(useUiStore.getState().graphOpen).toBe(true);
     expect(
       screen.getByRole("button", { name: "Sessions graph" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("toggles the collected view from the collected control and reflects aria-expanded", async () => {
+    render(<TitleBar />);
+    const button = screen.getByRole("button", { name: "Collected view" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(useUiStore.getState().collectedOpen).toBe(false);
+
+    // Wrap in act + flush so the click's subscribed re-render and the mount's
+    // async maximized-state read both settle inside act (pristine output).
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(useUiStore.getState().collectedOpen).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Collected view" }),
     ).toHaveAttribute("aria-expanded", "true");
   });
 });

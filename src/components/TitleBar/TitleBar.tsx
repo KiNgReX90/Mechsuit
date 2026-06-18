@@ -27,6 +27,8 @@ export function TitleBar() {
   const toggleSettings = useUiStore((s) => s.toggleSettings);
   const graphOpen = useUiStore((s) => s.graphOpen);
   const toggleGraph = useUiStore((s) => s.toggleGraph);
+  const collectedOpen = useUiStore((s) => s.collectedOpen);
+  const toggleCollected = useUiStore((s) => s.toggleCollected);
 
   useEffect(() => {
     let disposed = false;
@@ -100,6 +102,32 @@ export function TitleBar() {
             <circle cx="18" cy="7" r="2.4" />
             <circle cx="12" cy="18" r="2.4" />
             <path d="M7.9 7.4 10.4 16M16.4 9 12.9 16M8 6.4h7.6" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          className="title-bar-button title-bar-button--collected"
+          aria-label="Collected view"
+          title="Collected view"
+          aria-expanded={collectedOpen}
+          onClick={() => toggleCollected()}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="15"
+            height="15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
+            <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
+            <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
+            <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
           </svg>
         </button>
       </div>

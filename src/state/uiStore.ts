@@ -20,6 +20,8 @@ export interface UiState {
   settingsOpen: boolean;
   /** Whether the sessions graph screen is open. Closed by default. */
   graphOpen: boolean;
+  /** Whether the collected view is open. Closed by default. */
+  collectedOpen: boolean;
 
   setSelectedDirectoryPath: (path: string | null) => void;
   setFocusedSessionId: (sessionId: string | null) => void;
@@ -30,6 +32,8 @@ export interface UiState {
   toggleSettings: () => void;
   setGraphOpen: (open: boolean) => void;
   toggleGraph: () => void;
+  setCollectedOpen: (open: boolean) => void;
+  toggleCollected: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -39,6 +43,7 @@ export const useUiStore = create<UiState>((set) => ({
   commanderOpen: false,
   settingsOpen: false,
   graphOpen: false,
+  collectedOpen: false,
 
   setSelectedDirectoryPath: (path) => set({ selectedDirectoryPath: path }),
   setFocusedSessionId: (sessionId) => set({ focusedSessionId: sessionId }),
@@ -48,6 +53,22 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({ commanderOpen: !state.commanderOpen })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   toggleSettings: () => set((state) => ({ settingsOpen: !state.settingsOpen })),
-  setGraphOpen: (open) => set({ graphOpen: open }),
-  toggleGraph: () => set((state) => ({ graphOpen: !state.graphOpen })),
+  // The graph and the collected view are mutually exclusive full-screen modes:
+  // opening one closes the other so they can never overlay together.
+  setGraphOpen: (open) =>
+    set(open ? { graphOpen: true, collectedOpen: false } : { graphOpen: false }),
+  toggleGraph: () =>
+    set((state) =>
+      state.graphOpen
+        ? { graphOpen: false }
+        : { graphOpen: true, collectedOpen: false },
+    ),
+  setCollectedOpen: (open) =>
+    set(open ? { collectedOpen: true, graphOpen: false } : { collectedOpen: false }),
+  toggleCollected: () =>
+    set((state) =>
+      state.collectedOpen
+        ? { collectedOpen: false }
+        : { collectedOpen: true, graphOpen: false },
+    ),
 }));

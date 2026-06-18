@@ -51,6 +51,55 @@ describe("uiStore", () => {
     expect(useUiStore.getState().graphOpen).toBe(false);
   });
 
+  it("starts with the collected view closed", () => {
+    expect(useUiStore.getState().collectedOpen).toBe(false);
+  });
+
+  it("opens, closes, and toggles the collected view", () => {
+    useUiStore.getState().setCollectedOpen(true);
+    expect(useUiStore.getState().collectedOpen).toBe(true);
+
+    useUiStore.getState().setCollectedOpen(false);
+    expect(useUiStore.getState().collectedOpen).toBe(false);
+
+    useUiStore.getState().toggleCollected();
+    expect(useUiStore.getState().collectedOpen).toBe(true);
+    useUiStore.getState().toggleCollected();
+    expect(useUiStore.getState().collectedOpen).toBe(false);
+  });
+
+  it("closes the collected view when the graph opens (mutually exclusive)", () => {
+    useUiStore.getState().setCollectedOpen(true);
+    expect(useUiStore.getState().collectedOpen).toBe(true);
+
+    useUiStore.getState().setGraphOpen(true);
+    expect(useUiStore.getState().graphOpen).toBe(true);
+    expect(useUiStore.getState().collectedOpen).toBe(false);
+
+    // Toggling the graph open from collected also closes collected.
+    useUiStore.getState().setGraphOpen(false);
+    useUiStore.getState().setCollectedOpen(true);
+    useUiStore.getState().toggleGraph();
+    expect(useUiStore.getState().graphOpen).toBe(true);
+    expect(useUiStore.getState().collectedOpen).toBe(false);
+  });
+
+  it("closes the graph when the collected view opens (mutually exclusive)", () => {
+    useUiStore.getState().setGraphOpen(true);
+    expect(useUiStore.getState().graphOpen).toBe(true);
+
+    useUiStore.getState().setCollectedOpen(true);
+    expect(useUiStore.getState().collectedOpen).toBe(true);
+    expect(useUiStore.getState().graphOpen).toBe(false);
+
+    // Toggling collected open from the graph also closes the graph.
+    useUiStore.getState().setCollectedOpen(false);
+    useUiStore.getState().setGraphOpen(true);
+    useUiStore.getState().toggleCollected();
+    expect(useUiStore.getState().collectedOpen).toBe(true);
+    expect(useUiStore.getState().graphOpen).toBe(false);
+  });
+
   it("opens, closes, and toggles the Settings drawer", () => {
     useUiStore.getState().setSettingsOpen(true);
     expect(useUiStore.getState().settingsOpen).toBe(true);

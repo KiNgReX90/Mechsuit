@@ -45,7 +45,7 @@ intents:
     created: 2026-06-18
     work_items:
       - id: wi-01-entry-scaffold
-        status: pending
+        status: completed
         complexity: medium
         depends_on: []
       - id: wi-02-active-workspaces-hook
