@@ -110,7 +110,12 @@ where
     let reader_id = id.clone();
     let reader_output = output;
     thread::spawn(move || {
-        let mut buf = [0u8; 4096];
+        // A large buffer lets a burst of output drain in one read instead of
+        // many 4 KB reads, so a chatty child (e.g. an agent running several
+        // subagents) emits far fewer `session://output` events — each event is
+        // a Rust→webview IPC hop with a JSON-serialized payload, so coalescing
+        // at the source is the cheapest lever on print-heavy lag.
+        let mut buf = [0u8; 64 * 1024];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,

@@ -20,6 +20,7 @@ const disposeSpy = vi.fn();
 const onDataDisposeSpy = vi.fn();
 const fitSpy = vi.fn();
 const openSpy = vi.fn();
+const focusSpy = vi.fn();
 let constructed = 0;
 let dataHandler: ((data: string) => void) | undefined;
 
@@ -31,6 +32,7 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon = vi.fn();
     open = openSpy;
     dispose = disposeSpy;
+    focus = focusSpy;
     constructor() {
       constructed += 1;
     }
@@ -66,7 +68,13 @@ vi.mock("../ipc/commands", () => ({
 }));
 
 import { resizeSession, writeSession } from "../ipc/commands";
-import { acquireTerminal, releaseTerminal, disposeTerminal } from "./terminalPool";
+import { onSessionOutput } from "../ipc/events";
+import {
+  acquireTerminal,
+  disposeTerminal,
+  focusTerminal,
+  releaseTerminal,
+} from "./terminalPool";
 
 function newContainer(): HTMLDivElement {
   const el = document.createElement("div");
@@ -75,9 +83,11 @@ function newContainer(): HTMLDivElement {
 }
 
 afterEach(() => {
-  // The pool is a module-level singleton; tear down the session each test uses
-  // so the next test starts from a clean slate.
+  // The pool is a module-level singleton; tear down every session a test may
+  // use so the next test starts from a clean slate (and the shared output
+  // subscription is released once the pool empties).
   disposeTerminal("p1");
+  disposeTerminal("p2");
   vi.clearAllMocks();
   constructed = 0;
   outputCb = undefined;
@@ -136,6 +146,36 @@ describe("terminalPool", () => {
     expect(writeSpy).toHaveBeenCalledWith("mine");
   });
 
+  it("registers ONE shared output subscription regardless of terminal count", () => {
+    // Per-terminal subscriptions would fan every chunk out to all panes; the
+    // pool instead routes a single subscription by sessionId. Acquiring many
+    // terminals must not multiply the listener count.
+    acquireTerminal("p1", newContainer());
+    acquireTerminal("p2", newContainer());
+    expect(onSessionOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes the shared subscription to the addressed terminal", () => {
+    acquireTerminal("p1", newContainer());
+    acquireTerminal("p2", newContainer());
+    outputCb?.({ sessionId: "p2", data: "hi-p2" });
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith("hi-p2");
+  });
+
+  it("pane.focus and focusTerminal move DOM focus onto the xterm", () => {
+    const pane = acquireTerminal("p1", newContainer());
+    pane.focus();
+    expect(focusSpy).toHaveBeenCalledTimes(1);
+    focusTerminal("p1");
+    expect(focusSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("focusTerminal is a no-op for an unknown session", () => {
+    focusTerminal("nope");
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
   it("forwards keystrokes to the session via writeSession", () => {
     acquireTerminal("p1", newContainer());
     dataHandler?.("x");
@@ -149,12 +189,25 @@ describe("terminalPool", () => {
     expect(resizeSession).toHaveBeenCalledWith("p1", 80, 24);
   });
 
-  it("dispose tears down xterm, the input handler, and the output subscription", async () => {
+  it("dispose tears down xterm and the input handler; emptying the pool releases the shared subscription", async () => {
     acquireTerminal("p1", newContainer());
     await Promise.resolve();
     disposeTerminal("p1");
     expect(disposeSpy).toHaveBeenCalledTimes(1);
     expect(onDataDisposeSpy).toHaveBeenCalledTimes(1);
+    // Disposing the last terminal empties the pool, so the single shared
+    // output subscription is released.
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the shared subscription alive while other terminals remain", async () => {
+    acquireTerminal("p1", newContainer());
+    acquireTerminal("p2", newContainer());
+    await Promise.resolve();
+    disposeTerminal("p1");
+    // p2 still lives, so the subscription must not be torn down.
+    expect(unlisten).not.toHaveBeenCalled();
+    disposeTerminal("p2");
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
 

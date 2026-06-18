@@ -29,6 +29,14 @@ import { useUiStore } from "./uiStore";
 export const IDLE_DEBOUNCE_MS = 2000;
 
 /**
+ * How long a prompted completion's tile blinks green before it auto-clears to
+ * neutral. The blink alerts briefly, then stops on its own so a finished session
+ * the user never returns to does not pulse forever. Focusing the tile clears it
+ * sooner. Single source of truth for the 5s window (the CSS pulse just loops).
+ */
+export const READY_BLINK_MS = 5000;
+
+/**
  * Upper bound on the trailing-output buffer kept per session for `classifyIdle`.
  * Only the tail matters to the heuristics, so we never accumulate the whole
  * stream — we keep at most the last ~2KB of characters.
@@ -44,6 +52,9 @@ export function useStatusEngine(): void {
   useEffect(() => {
     // Per-session pending idle timers and bounded trailing-output buffers.
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
+    // Per-session pending blink-expiry timers: a blinking (prompted) ready tile
+    // auto-acknowledges after READY_BLINK_MS so its green pulse stops on its own.
+    const blinkTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const trailing = new Map<string, string>();
     let disposed = false;
 
@@ -52,6 +63,14 @@ export function useStatusEngine(): void {
       if (handle !== undefined) {
         clearTimeout(handle);
         timers.delete(sessionId);
+      }
+    };
+
+    const clearBlinkTimer = (sessionId: string) => {
+      const handle = blinkTimers.get(sessionId);
+      if (handle !== undefined) {
+        clearTimeout(handle);
+        blinkTimers.delete(sessionId);
       }
     };
 
@@ -68,6 +87,21 @@ export function useStatusEngine(): void {
         useUiStore.getState().focusedSessionId === sessionId
       ) {
         useStatusStore.getState().acknowledge(sessionId);
+      }
+      // (Re)evaluate the blink window. A tile that just entered the blinking
+      // state (ready + unacknowledged) auto-clears to neutral after
+      // READY_BLINK_MS; any other transition cancels a pending expiry so a
+      // session that goes back to work never acknowledges out from under itself.
+      clearBlinkTimer(sessionId);
+      const entry = useStatusStore.getState().statusBySession[sessionId];
+      if (entry && entry.status === "ready" && !entry.acknowledged) {
+        blinkTimers.set(
+          sessionId,
+          setTimeout(() => {
+            blinkTimers.delete(sessionId);
+            useStatusStore.getState().acknowledge(sessionId);
+          }, READY_BLINK_MS),
+        );
       }
     };
 
@@ -113,6 +147,7 @@ export function useStatusEngine(): void {
       if (!sessionId) return;
       const entry = useStatusStore.getState().statusBySession[sessionId];
       if (entry?.status === "ready") {
+        clearBlinkTimer(sessionId);
         useStatusStore.getState().acknowledge(sessionId);
       }
     };
@@ -149,6 +184,8 @@ export function useStatusEngine(): void {
       unsubscribeFocus();
       for (const handle of timers.values()) clearTimeout(handle);
       timers.clear();
+      for (const handle of blinkTimers.values()) clearTimeout(handle);
+      blinkTimers.clear();
       trailing.clear();
     };
   }, []);

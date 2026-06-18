@@ -12,8 +12,10 @@ import { Terminal } from "../Terminal";
 import type { SessionInfo, SessionStatusState } from "../../types";
 import { computeGridLayout } from "../../lib/gridLayout";
 import { useStatusStore } from "../../state/statusStore";
+import { useSessionsStore } from "../../state/sessionsStore";
 import { usePausedStore } from "../../state/pausedStore";
 import { setSessionPaused, writeSession } from "../../ipc/commands";
+import { focusTerminal } from "../../lib/terminalPool";
 import { SessionActions } from "./SessionActions";
 
 // Ctrl+L (form feed, 0x0C). Sent to a session's PTY when you switch INTO it so
@@ -24,18 +26,17 @@ const CLEAR_SCREEN = "\f";
 
 /**
  * Map a session's status record to a tile status class. Returns null for the
- * neutral default (no entry or `working`). A `ready` session blinks green until
- * acknowledged, then settles to a steady (non-blinking) green so it still reads
- * as done at a glance without nagging. FOCUS WINS: callers must drop this class
+ * neutral default (no entry or `working`). A `ready` session blinks green to
+ * alert until acknowledged — either by the engine's blink window elapsing or the
+ * user focusing it — after which it clears back to neutral (no status color), so
+ * a finished tile never lingers green. FOCUS WINS: callers must drop this class
  * entirely for the focused tile so it never also carries a status color.
  */
 export function tileStatusClass(record: SessionStatusState | undefined): string | null {
   if (!record) return null;
   switch (record.status) {
     case "ready":
-      return record.acknowledged
-        ? "workspace-tile--ready-seen"
-        : "workspace-tile--ready";
+      return record.acknowledged ? null : "workspace-tile--ready";
     case "awaiting-approval":
       return "workspace-tile--awaiting-approval";
     case "error":
@@ -62,6 +63,7 @@ export function Grid({
   onClose,
 }: GridProps) {
   const statusBySession = useStatusStore((s) => s.statusBySession);
+  const namesBySession = useSessionsStore((s) => s.namesBySession);
   const pausedIds = usePausedStore((s) => s.pausedIds);
   const { rows } = computeGridLayout(sessions.length);
 
@@ -114,6 +116,11 @@ export function Grid({
                     void writeSession(session.id, CLEAR_SCREEN);
                   }
                   onFocus(session.id);
+                  // Pull DOM focus onto the terminal even when the click landed
+                  // on the tile chrome (header/padding) rather than the xterm
+                  // textarea — and on a re-click of the already-focused tile,
+                  // where the `focused` prop wouldn't change to re-trigger it.
+                  focusTerminal(session.id);
                 }}
                 // Only the focused tile forwards keystrokes to its Terminal;
                 // others stop input at the capture phase before it reaches xterm.
@@ -124,6 +131,9 @@ export function Grid({
                 }}
               >
                 <div className="workspace-tile-header">
+                  <span className="workspace-tile-name" title={namesBySession[session.id]}>
+                    {namesBySession[session.id]}
+                  </span>
                   <SessionActions
                     sessionId={session.id}
                     isExpanded={false}
@@ -148,7 +158,7 @@ export function Grid({
                     </button>
                   </div>
                 )}
-                <Terminal sessionId={session.id} />
+                <Terminal sessionId={session.id} focused={isFocused} />
               </div>
             );
           })}

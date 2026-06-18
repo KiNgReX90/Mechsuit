@@ -19,9 +19,9 @@ export interface StatusStoreState {
    * acknowledgement (`promptedSinceAck`); otherwise an already-seen session
    * keeps its acknowledged state, so incidental output (focus-escape redraws,
    * live-UI ticks) never makes it blink again. A brand-new session defaults to
-   * acknowledged, so its first ready (a startup the user never prompted) is
-   * steady, not blinking — blinking is reserved for a completion the user asked
-   * for via {@link markPrompted}.
+   * acknowledged, so its first ready (a startup the user never prompted) stays
+   * neutral, not blinking — blinking is reserved for a completion the user asked
+   * for via {@link markPrompted}, and clears back to neutral once acknowledged.
    */
   setStatus: (sessionId: string, status: SessionStatus) => void;
 
@@ -55,14 +55,28 @@ export const useStatusStore = create<StatusStoreState>((set, get) => ({
     // Blinking is armed EXCLUSIVELY by a submitted prompt: a ready re-alerts
     // (drops acknowledged) only when a fresh prompt is outstanding. Otherwise it
     // keeps the prior acknowledged, which DEFAULTS TO TRUE for a never-seen
-    // session — so a freshly-opened session's first ready settles to steady
-    // (no blink) rather than nagging about a startup the user never asked for.
+    // session — so a freshly-opened session's first ready settles quietly
+    // (neutral, no blink) rather than nagging about a startup the user never asked for.
     // Reaching ready consumes the prompt so a second incidental cycle won't
     // re-alert. An already-blinking session keeps its false until acknowledged.
     const prompted = existing?.promptedSinceAck ?? false;
     const acknowledged =
       status === "ready" ? (prompted ? false : (existing?.acknowledged ?? true)) : (existing?.acknowledged ?? true);
     const promptedSinceAck = status === "ready" ? false : prompted;
+    // No-op guard: a chatty session emits many chunks that all classify as
+    // "working", so the status engine calls this repeatedly with identical
+    // values. Re-allocating `statusBySession` each time would re-render every
+    // status subscriber (the whole grid) per chunk — the dominant lag source
+    // under heavy output. When nothing changes, keep the same reference so
+    // Zustand notifies no one.
+    if (
+      existing &&
+      existing.status === status &&
+      existing.acknowledged === acknowledged &&
+      existing.promptedSinceAck === promptedSinceAck
+    ) {
+      return;
+    }
     set((state) => ({
       statusBySession: {
         ...state.statusBySession,

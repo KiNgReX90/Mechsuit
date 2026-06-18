@@ -2,11 +2,18 @@ import "./Terminal.css";
 
 import { useEffect, useRef } from "react";
 
-import { acquireTerminal, releaseTerminal } from "../../lib/terminalPool";
+import { acquireTerminal, releaseTerminal, type TerminalPane } from "../../lib/terminalPool";
 
 export interface TerminalProps {
   /** Session whose PTY this pane reads from and writes to. */
   sessionId: string;
+  /**
+   * Whether the app considers this pane the focused one. When it becomes true,
+   * the terminal grabs DOM focus so keystrokes route here — keeping browser
+   * focus in lockstep with the app's selection rather than relying on a click
+   * landing exactly on the xterm textarea.
+   */
+  focused?: boolean;
 }
 
 /**
@@ -20,14 +27,16 @@ export interface TerminalProps {
  * the same terminal with full scrollback and no flicker. Teardown happens only
  * when the session is closed (`sessionsStore.removeSession` → `disposeTerminal`).
  */
-export function Terminal({ sessionId }: TerminalProps) {
+export function Terminal({ sessionId, focused }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const paneRef = useRef<TerminalPane | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const pane = acquireTerminal(sessionId, container);
+    paneRef.current = pane;
 
     // Keep the PTY sized to the visible pane while this tile is mounted.
     const resizeObserver = new ResizeObserver(() => pane.fit());
@@ -36,9 +45,20 @@ export function Terminal({ sessionId }: TerminalProps) {
 
     return () => {
       resizeObserver.disconnect();
+      paneRef.current = null;
       releaseTerminal(sessionId);
     };
   }, [sessionId]);
+
+  // Keep DOM focus in lockstep with the app's focused-session selection. The
+  // acquire effect above runs first (so the pane exists), then this grabs focus
+  // when the pane is — or becomes — the focused one. Without this, browser focus
+  // only ever moves on a click landing exactly on the xterm textarea, so it can
+  // drift out of sync with `focusedSessionId` and keystrokes get routed to (or
+  // swallowed by) the wrong pane.
+  useEffect(() => {
+    if (focused) paneRef.current?.focus();
+  }, [focused, sessionId]);
 
   return <div ref={containerRef} className="terminal-pane" />;
 }

@@ -10,11 +10,20 @@ import { create } from "zustand";
 
 import { killSession, listSessions, spawnSession } from "../ipc/commands";
 import { disposeTerminal } from "../lib/terminalPool";
+import { generateSessionName } from "../lib/sessionName";
 import type { SessionInfo } from "../types";
 
 export interface SessionsState {
   /** Sessions keyed by their owning directory path. */
   sessionsByDirectory: Record<string, SessionInfo[]>;
+
+  /**
+   * Human-friendly codename for each session, keyed by sessionId. Assigned once
+   * at spawn (and backfilled for sessions surfaced by `loadDirectory`), then
+   * held stable for the session's lifetime so a tile always reads the same name.
+   * Unique across all directories; dropped when the session is removed.
+   */
+  namesBySession: Record<string, string>;
 
   /**
    * Reconcile the given directory's sessions against `listSessions` (filtered to
@@ -42,6 +51,7 @@ export interface SessionsState {
 
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessionsByDirectory: {},
+  namesBySession: {},
 
   loadDirectory: async (dirPath) => {
     const all = await listSessions();
@@ -62,23 +72,36 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         }
       }
       const fresh = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+      const finalList = [...ordered, ...fresh];
+      // Ensure every surfaced session carries a stable codename. Existing names
+      // are kept; only sessions seen for the first time get a fresh, unique one.
+      const namesBySession = { ...state.namesBySession };
+      for (const s of finalList) {
+        if (!namesBySession[s.id]) {
+          namesBySession[s.id] = generateSessionName(Object.values(namesBySession));
+        }
+      }
       return {
         sessionsByDirectory: {
           ...state.sessionsByDirectory,
-          [dirPath]: [...ordered, ...fresh],
+          [dirPath]: finalList,
         },
+        namesBySession,
       };
     });
   },
 
   addSession: async (dirPath) => {
     const info = await spawnSession(dirPath);
-    const existing = get().sessionsByDirectory[dirPath] ?? [];
+    const { sessionsByDirectory, namesBySession } = get();
+    const existing = sessionsByDirectory[dirPath] ?? [];
+    const name = generateSessionName(Object.values(namesBySession));
     set((state) => ({
       sessionsByDirectory: {
         ...state.sessionsByDirectory,
         [dirPath]: [...existing, info],
       },
+      namesBySession: { ...state.namesBySession, [info.id]: name },
     }));
     return info;
   },
@@ -89,11 +112,16 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // alive across workspace switches) so it does not leak.
     disposeTerminal(sessionId);
     const existing = get().sessionsByDirectory[dirPath] ?? [];
-    set((state) => ({
-      sessionsByDirectory: {
-        ...state.sessionsByDirectory,
-        [dirPath]: existing.filter((s) => s.id !== sessionId),
-      },
-    }));
+    set((state) => {
+      const namesBySession = { ...state.namesBySession };
+      delete namesBySession[sessionId];
+      return {
+        sessionsByDirectory: {
+          ...state.sessionsByDirectory,
+          [dirPath]: existing.filter((s) => s.id !== sessionId),
+        },
+        namesBySession,
+      };
+    });
   },
 }));

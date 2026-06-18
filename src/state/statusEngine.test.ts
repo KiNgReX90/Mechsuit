@@ -19,7 +19,7 @@ vi.mock("../ipc/events", () => ({
   }),
 }));
 
-import { IDLE_DEBOUNCE_MS, useStatusEngine } from "./statusEngine";
+import { IDLE_DEBOUNCE_MS, READY_BLINK_MS, useStatusEngine } from "./statusEngine";
 import { useStatusStore } from "./statusStore";
 import { useUiStore } from "./uiStore";
 
@@ -221,6 +221,52 @@ describe("statusEngine", () => {
     act(() => outputCb!({ sessionId: SID, data: "thinking...\n" }));
     act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
     expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+  });
+
+  it("auto-acknowledges a blinking ready session once the blink window elapses", async () => {
+    await mountEngine();
+
+    // A prompted, unfocused completion blinks to alert (unacknowledged).
+    act(() => outputCb!({ sessionId: SID, data: "thinking...\n" }));
+    act(() => useStatusStore.getState().markPrompted(SID));
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+
+    // It must NOT still be blinking just before the window closes...
+    act(() => vi.advanceTimersByTime(READY_BLINK_MS - 1));
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+
+    // ...and clears to neutral (acknowledged) once the window elapses, without
+    // changing the underlying status.
+    act(() => vi.advanceTimersByTime(1));
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(true);
+    expect(statusOf(SID)).toBe("ready");
+  });
+
+  it("cancels a stale blink window when the session resumes working", async () => {
+    await mountEngine();
+
+    act(() => outputCb!({ sessionId: SID, data: "thinking...\n" }));
+    act(() => useStatusStore.getState().markPrompted(SID));
+    // t0: first ready → blink window #1 would close at t0 + READY_BLINK_MS.
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+
+    // Resume working before window #1 closes — this must cancel it.
+    act(() => outputCb!({ sessionId: SID, data: "more work\n" }));
+    expect(statusOf(SID)).toBe("working");
+
+    // The idle debounce re-settles it to ready, opening a FRESH window #2 that
+    // only closes at t0 + IDLE_DEBOUNCE_MS + READY_BLINK_MS.
+    act(() => vi.advanceTimersByTime(IDLE_DEBOUNCE_MS));
+    expect(statusOf(SID)).toBe("ready");
+    expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
+
+    // Advance to where window #1 WOULD have closed. If it were still alive it
+    // would acknowledge now; it must stay unacknowledged (window #1 cancelled).
+    act(() => vi.advanceTimersByTime(READY_BLINK_MS - IDLE_DEBOUNCE_MS));
     expect(useStatusStore.getState().statusBySession[SID]?.acknowledged).toBe(false);
   });
 

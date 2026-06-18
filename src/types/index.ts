@@ -65,10 +65,12 @@ export interface SessionStatusState {
   /**
    * Whether the session's "ready" state needs no alert. Defaults to true for a
    * brand-new session, so a freshly-opened session that just finished starting
-   * up is steady, not blinking. Goes false (blink) only when a "ready" follows a
-   * submitted prompt (see {@link promptedSinceAck}); the user clears it by
-   * focusing the tile. Stays true across incidental working→ready cycles, so
-   * switching focus or background redraws never make a seen tile blink again.
+   * up stays neutral (no green border), not blinking. Goes false (blink) only
+   * when a "ready" follows a submitted prompt (see {@link promptedSinceAck}); it
+   * returns to true — clearing the tile back to neutral — when the user focuses
+   * the tile or the engine's blink window elapses. Stays true across incidental
+   * working→ready cycles, so switching focus or background redraws never make a
+   * seen tile blink again.
    */
   acknowledged: boolean;
   /**

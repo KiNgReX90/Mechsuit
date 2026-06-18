@@ -50,6 +50,7 @@ function Workspace() {
   const removeSession = useSessionsStore((s) => s.removeSession);
 
   const statusBySession = useStatusStore((s) => s.statusBySession);
+  const namesBySession = useSessionsStore((s) => s.namesBySession);
   const pausedIds = usePausedStore((s) => s.pausedIds);
 
   // Populate the store for whichever directory is selected. Sessions spawned
@@ -155,6 +156,9 @@ function Workspace() {
               data-testid="workspace-expanded"
             >
               <div className="workspace-tile-header">
+                <span className="workspace-tile-name" title={namesBySession[expanded]}>
+                  {namesBySession[expanded]}
+                </span>
                 <SessionActions
                   sessionId={expanded}
                   isExpanded
@@ -179,7 +183,9 @@ function Workspace() {
                   </button>
                 </div>
               )}
-              <Terminal sessionId={expanded} />
+              {/* The expanded pane fills the workspace and is the only pane the
+                  user can type into, so it always holds DOM focus. */}
+              <Terminal sessionId={expanded} focused />
             </div>
           );
         })()

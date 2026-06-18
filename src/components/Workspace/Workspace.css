@@ -165,17 +165,16 @@
 }
 
 /*
- * Freshly-ready (unacknowledged): blink green for ~3s via a fixed-iteration
- * animation, then settle to steady green. The class persists (driven by
- * status === "ready" && !acknowledged) so the border holds until acknowledged;
- * the steady color is set on the element directly so it remains after the
- * animation's final frame.
+ * Freshly-ready (unacknowledged): blink the green border to alert. The pulse
+ * loops while the class is present; the status engine acknowledges the session
+ * after a fixed blink window (READY_BLINK_MS), which drops this class and returns
+ * the tile to its neutral border — so a finished tile alerts briefly, then stops.
  */
 .workspace-tile--ready,
 .workspace-expanded.workspace-tile--ready {
   border-color: var(--status-ready);
   box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.35);
-  animation: workspace-tile-ready-blink 0.5s steps(1, end) 6;
+  animation: workspace-tile-ready-blink 0.5s steps(1, end) infinite;
 }
 
 @keyframes workspace-tile-ready-blink {
@@ -188,23 +187,26 @@
   }
 }
 
-/*
- * Acknowledged ready: the user has already seen this session finish (focused it,
- * or it completed while focused), so hold a steady green border with no blink —
- * still legible as "done" at a glance, without the attention-grabbing pulse.
- */
-.workspace-tile--ready-seen,
-.workspace-expanded.workspace-tile--ready-seen {
-  border-color: var(--status-ready);
-  box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.35);
-}
-
 .workspace-tile-header {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   flex: 0 0 auto;
   padding: 4px 6px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.3), transparent);
+}
+
+/* Per-session codename, left of the header's action row. */
+.workspace-tile-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .workspace-tile-expand,

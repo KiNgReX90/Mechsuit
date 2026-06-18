@@ -84,6 +84,29 @@ describe("statusStore", () => {
       expect(useStatusStore.getState().statusBySession["session-1"].acknowledged).toBe(true);
     });
 
+    it("is a reference-stable no-op when nothing changes (prevents re-render churn)", () => {
+      // A chatty session emits many chunks that all classify as "working".
+      // Re-allocating statusBySession on each one would re-render the whole grid
+      // per chunk — the dominant lag source under heavy output. An unchanged
+      // upsert must therefore leave the map reference untouched.
+      useStatusStore.getState().setStatus("session-1", "working");
+      const before = useStatusStore.getState().statusBySession;
+      const entryBefore = before["session-1"];
+
+      useStatusStore.getState().setStatus("session-1", "working");
+      const after = useStatusStore.getState().statusBySession;
+
+      expect(after).toBe(before);
+      expect(after["session-1"]).toBe(entryBefore);
+    });
+
+    it("does allocate a new map when the status actually changes", () => {
+      useStatusStore.getState().setStatus("session-1", "working");
+      const before = useStatusStore.getState().statusBySession;
+      useStatusStore.getState().setStatus("session-1", "error");
+      expect(useStatusStore.getState().statusBySession).not.toBe(before);
+    });
+
     it("does not reset acknowledged when transitioning to non-ready statuses", () => {
       useStatusStore.getState().setStatus("session-1", "ready");
       useStatusStore.getState().acknowledge("session-1");

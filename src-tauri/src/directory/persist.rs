@@ -115,52 +115,39 @@ fn detached_short_sha(path: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Newest working-tree file mtime for `path` as Unix epoch **seconds**, or
-/// `None` when it cannot be determined.
+/// Recency of `path` as a Unix epoch **seconds** value, or `None` when it
+/// cannot be determined.
 ///
-/// Git-aware: for a repo, enumerate the files git would track or show via
-/// `git ls-files --cached --others --exclude-standard -z` (so `.gitignore`'d /
-/// heavy dirs like `node_modules`, `target` are skipped) and take the max
-/// mtime. For a non-repo — or a repo that yields no files (e.g. empty, no
-/// `git`) — fall back to a shallow scan of the directory's direct entries'
-/// mtimes. Never an error: any failure degrades to the fallback or `None`
-/// (mirrors `detect_git`'s tolerance).
+/// For a git repo this is the **last commit time** (`git log -1 --format=%ct`):
+/// a bounded, O(1) signal independent of the repo's file count. For a non-repo
+/// — or a repo with no commits yet (or no `git`) — it falls back to a shallow
+/// scan of the directory's direct entries' mtimes. Never an error: any failure
+/// degrades to the fallback or `None` (mirrors `detect_git`'s tolerance).
+///
+/// This deliberately does NOT stat every tracked file. That earlier walk ran a
+/// `stat` per file (tens of thousands for a large repo) on the synchronous
+/// `list_directories` path that gates boot, so boot time scaled with repo size.
+/// The trade-off is that purely-uncommitted working-tree edits no longer move
+/// the value; for ordering workspaces by recent activity, last-commit time is
+/// an ample and cheap proxy.
 pub fn detect_last_modified(path: &str) -> Option<i64> {
-    if let Some(ts) = git_tracked_max_mtime(path) {
+    if let Some(ts) = git_last_commit_secs(path) {
         return Some(ts);
     }
     shallow_max_mtime(path)
 }
 
-/// Max mtime (epoch seconds) over the files git would track/show for `path`.
-/// `None` if `path` is not a repo, `git` is missing, the command fails, or no
-/// listed file yields an mtime.
-fn git_tracked_max_mtime(path: &str) -> Option<i64> {
+/// Unix epoch **seconds** of `path`'s last commit (`git log -1 --format=%ct`).
+/// `None` if `path` is not a repo, `git` is missing, the repo has no commits
+/// yet, or the output does not parse — every such case falls back to the
+/// shallow scan in [`detect_last_modified`].
+fn git_last_commit_secs(path: &str) -> Option<i64> {
     let output = Command::new("git")
-        .args([
-            "-C",
-            path,
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "-z",
-        ])
+        .args(["-C", path, "log", "-1", "--format=%ct"])
         .output()
         .ok()
         .filter(|o| o.status.success())?;
-
-    let base = Path::new(path);
-    let mut max: Option<i64> = None;
-    for rel in output.stdout.split(|&b| b == 0) {
-        if rel.is_empty() {
-            continue;
-        }
-        let rel = String::from_utf8_lossy(rel);
-        let ts = file_mtime_secs(&base.join(rel.as_ref()));
-        max = max_opt(max, ts);
-    }
-    max
+    String::from_utf8_lossy(&output.stdout).trim().parse::<i64>().ok()
 }
 
 /// Max mtime (epoch seconds) over the direct entries of `path` (non-recursive),
@@ -409,20 +396,23 @@ mod tests {
     }
 
     #[test]
-    fn detect_last_modified_reflects_newest_repo_file() {
+    fn detect_last_modified_tracks_last_commit_time() {
         let tmp = TempDir::new("lm-repo");
         init_repo(&tmp.path);
         let before = newest_secs(&tmp.path);
 
-        // Write a brand-new (untracked-but-shown) file after a short gap so its
-        // mtime is strictly newer; --others picks it up.
+        // An *empty* commit advances the repo's last-commit time without
+        // touching any working-tree file. Commit-time recency must rise; the
+        // old working-tree-mtime scan would not have seen it. This is the
+        // bounded, repo-size-independent signal that replaced the per-file
+        // stat walk (which made boot scale with file count).
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        std::fs::write(tmp.path.join("fresh.rs"), b"// new").unwrap();
+        git(&tmp.path, &["commit", "-q", "--allow-empty", "-m", "empty"]);
         let after = newest_secs(&tmp.path);
 
         assert!(
-            after >= before,
-            "newest file mtime should not go backwards ({after} < {before})"
+            after > before,
+            "a new commit should raise commit-time recency ({after} <= {before})"
         );
     }
 
@@ -435,7 +425,9 @@ mod tests {
         git(&tmp.path, &["commit", "-q", "-m", "ignore"]);
         let baseline = newest_secs(&tmp.path);
 
-        // A file under an ignored dir, written later, must NOT raise the value.
+        // A file under an ignored dir, written later (and never committed),
+        // must NOT raise the value: recency is the last commit time, so
+        // uncommitted churn — ignored or not — does not move it.
         std::thread::sleep(std::time::Duration::from_millis(1100));
         std::fs::create_dir_all(tmp.path.join("target")).unwrap();
         std::fs::write(tmp.path.join("target/huge.bin"), b"ignored").unwrap();
@@ -443,7 +435,7 @@ mod tests {
 
         assert_eq!(
             after, baseline,
-            "an ignored file should not change the git-aware last-modified"
+            "an uncommitted file should not change the commit-time last-modified"
         );
     }
 

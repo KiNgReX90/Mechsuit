@@ -26,6 +26,7 @@ vi.mock("../../ipc/commands", () => ({
 const writeSpy = vi.fn();
 const disposeSpy = vi.fn();
 const onDataDisposeSpy = vi.fn();
+const focusSpy = vi.fn();
 let dataHandler: ((data: string) => void) | undefined;
 
 vi.mock("@xterm/xterm", () => ({
@@ -36,6 +37,7 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     dispose = disposeSpy;
+    focus = focusSpy;
     onData = (cb: (data: string) => void) => {
       dataHandler = cb;
       return { dispose: onDataDisposeSpy };
@@ -98,6 +100,23 @@ describe("<Terminal />", () => {
     render(<Terminal sessionId="s1" />);
     dataHandler?.("a");
     expect(writeSession).toHaveBeenCalledWith("s1", "a");
+  });
+
+  it("grabs DOM focus when mounted as the focused pane", () => {
+    render(<Terminal sessionId="s1" focused />);
+    expect(focusSpy).toHaveBeenCalled();
+  });
+
+  it("does not grab focus when it is not the focused pane", () => {
+    render(<Terminal sessionId="s1" />);
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
+  it("grabs focus when `focused` flips true after mount", () => {
+    const { rerender } = render(<Terminal sessionId="s1" focused={false} />);
+    expect(focusSpy).not.toHaveBeenCalled();
+    rerender(<Terminal sessionId="s1" focused />);
+    expect(focusSpy).toHaveBeenCalledTimes(1);
   });
 
   it("arms a re-alert when the user submits a prompt (carriage return)", () => {

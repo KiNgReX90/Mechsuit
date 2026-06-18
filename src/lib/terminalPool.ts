@@ -29,6 +29,8 @@ export interface TerminalPane {
   readonly sessionId: string;
   /** Fit the terminal to its current container and resize the PTY to match. */
   fit(): void;
+  /** Move keyboard (DOM) focus onto this terminal's input surface. */
+  focus(): void;
 }
 
 interface PoolEntry {
@@ -38,10 +40,6 @@ interface PoolEntry {
    *  (and the rendered scrollback inside it) survives a workspace switch. */
   surface: HTMLDivElement;
   dataDisposable: { dispose: () => void };
-  unlisten?: UnlistenFn;
-  /** Set once {@link disposeTerminal} runs, so a still-pending output
-   *  subscription tears itself down when it resolves. */
-  disposed: boolean;
   pane: TerminalPane;
 }
 
@@ -72,6 +70,37 @@ const TERMINAL_THEME = {
 } as const;
 
 const pool = new Map<string, PoolEntry>();
+
+// A SINGLE `session://output` subscription feeds the whole pool. Each output
+// event carries its `sessionId`, so one listener routes the chunk to the right
+// entry via an O(1) map lookup. Registering one listener per terminal instead
+// would fan every chunk out to all N panes (each filtering by id), making
+// per-chunk cost grow with the number of open terminals — the dominant lag
+// source when many panes stream at once. The subscription lives only while at
+// least one terminal exists: the first acquire arms it, emptying the pool tears
+// it down (so a later acquire arms a fresh one).
+let outputUnlisten: UnlistenFn | undefined;
+let outputSubscribed = false;
+
+function ensureOutputSubscription(): void {
+  if (outputSubscribed) return;
+  outputSubscribed = true;
+  void onSessionOutput((payload) => {
+    pool.get(payload.sessionId)?.term.write(payload.data);
+  }).then((fn) => {
+    // The pool may have emptied before this promise resolved; if so, tear the
+    // subscription down immediately rather than leaking it.
+    if (outputSubscribed) outputUnlisten = fn;
+    else fn();
+  });
+}
+
+function teardownOutputSubscriptionIfIdle(): void {
+  if (pool.size > 0) return;
+  outputSubscribed = false;
+  outputUnlisten?.();
+  outputUnlisten = undefined;
+}
 
 function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
   const surface = document.createElement("div");
@@ -106,27 +135,22 @@ function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
     fitAddon,
     surface,
     dataDisposable,
-    disposed: false,
     pane: {
       sessionId,
       fit() {
         fitAddon.fit();
         void resizeSession(sessionId, term.cols, term.rows);
       },
+      focus() {
+        term.focus();
+      },
     },
   };
 
-  // Stream output destined for THIS session for the instance's whole life —
-  // including while detached (hidden behind another workspace) — so the pane is
-  // always current the instant it is re-shown.
-  void onSessionOutput((payload) => {
-    if (payload.sessionId === sessionId) {
-      entry.term.write(payload.data);
-    }
-  }).then((fn) => {
-    if (entry.disposed) fn();
-    else entry.unlisten = fn;
-  });
+  // Output streams in through the pool's single shared subscription (see
+  // `ensureOutputSubscription`), routed here by sessionId — the instance keeps
+  // receiving even while detached (hidden behind another workspace), so the
+  // pane is always current the instant it is re-shown.
 
   return entry;
 }
@@ -138,6 +162,7 @@ function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
  * on unmount.
  */
 export function acquireTerminal(sessionId: string, container: HTMLElement): TerminalPane {
+  ensureOutputSubscription();
   let entry = pool.get(sessionId);
   if (!entry) {
     entry = createEntry(sessionId, container);
@@ -146,6 +171,15 @@ export function acquireTerminal(sessionId: string, container: HTMLElement): Term
     container.appendChild(entry.surface);
   }
   return entry.pane;
+}
+
+/**
+ * Move keyboard (DOM) focus onto a session's terminal, if it is in the pool.
+ * Used to keep DOM focus in lockstep with the app's focused-session selection,
+ * so keystrokes are never routed to (or swallowed by) the wrong pane.
+ */
+export function focusTerminal(sessionId: string): void {
+  pool.get(sessionId)?.term.focus();
 }
 
 /**
@@ -159,16 +193,17 @@ export function releaseTerminal(sessionId: string): void {
 
 /**
  * Fully tear down a session's terminal — called when the session is closed for
- * good. Disposes xterm, the input handler, and the output subscription, then
- * drops the entry so a later acquire builds a fresh instance.
+ * good. Disposes xterm and the input handler, then drops the entry so a later
+ * acquire builds a fresh instance. The pool's shared output subscription is
+ * released only when this empties the pool.
  */
 export function disposeTerminal(sessionId: string): void {
   const entry = pool.get(sessionId);
   if (!entry) return;
   pool.delete(sessionId);
-  entry.disposed = true;
   entry.dataDisposable.dispose();
-  entry.unlisten?.();
   entry.term.dispose();
   entry.surface.remove();
+  // Drop the shared output subscription once the last terminal is gone.
+  teardownOutputSubscriptionIfIdle();
 }

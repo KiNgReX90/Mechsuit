@@ -8,7 +8,7 @@
  * Covers: add-terminal increments tiles, layout rows for n in {1,4,5,9},
  * expand toggle, focus selection, and per-directory session retention.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as commands from "../../ipc/commands";
@@ -48,7 +48,7 @@ function seedSessions(sessions: SessionInfo[], dirPath = DIR) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSessionsStore.setState({ sessionsByDirectory: {} });
+  useSessionsStore.setState({ sessionsByDirectory: {}, namesBySession: {} });
   useUiStore.setState({
     selectedDirectoryPath: DIR,
     focusedSessionId: null,
@@ -475,7 +475,7 @@ describe("Workspace", () => {
       expect(tile).not.toHaveClass("workspace-tile--error");
     });
 
-    it("shows a steady (non-blinking) green once a ready tile is acknowledged", async () => {
+    it("clears a ready tile to neutral once it is acknowledged", async () => {
       seedSessions([session("a")]);
       seedStatus("a", "ready", true);
 
@@ -485,10 +485,11 @@ describe("Workspace", () => {
       );
 
       const tile = tileFor("a");
-      // Acknowledged ready stays green but uses the steady class, not the
-      // blinking one — the user has already seen it finish.
-      expect(tile).toHaveClass("workspace-tile--ready-seen");
+      // Acknowledged ready no longer carries any status color — the blink window
+      // has elapsed (or the user focused it), so the border returns to neutral.
+      expect(tile.className).toBe("workspace-tile");
       expect(tile).not.toHaveClass("workspace-tile--ready");
+      expect(tile).not.toHaveClass("workspace-tile--ready-seen");
     });
 
     it("applies the status class to the expanded tile", async () => {
@@ -510,6 +511,32 @@ describe("Workspace", () => {
       const expandedTile = await screen.findByTestId("workspace-expanded");
       expect(expandedTile).toHaveClass("workspace-tile--focused");
       expect(expandedTile).not.toHaveClass("workspace-tile--error");
+    });
+  });
+
+  describe("session names", () => {
+    it("renders each session's codename in its grid tile", async () => {
+      seedSessions([session("a"), session("b")]);
+      useSessionsStore.setState({ namesBySession: { a: "Nova", b: "Orion" } });
+
+      render(<Workspace />);
+      await waitFor(() =>
+        expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+      );
+
+      expect(within(tileFor("a")).getByText("Nova")).toBeInTheDocument();
+      expect(within(tileFor("b")).getByText("Orion")).toBeInTheDocument();
+    });
+
+    it("renders the codename in the expanded tile", async () => {
+      seedSessions([session("a"), session("b")]);
+      useSessionsStore.setState({ namesBySession: { a: "Vega", b: "Atlas" } });
+      useUiStore.setState({ expandedSessionId: "a" });
+
+      render(<Workspace />);
+      const expanded = await screen.findByTestId("workspace-expanded");
+
+      expect(within(expanded).getByText("Vega")).toBeInTheDocument();
     });
   });
 

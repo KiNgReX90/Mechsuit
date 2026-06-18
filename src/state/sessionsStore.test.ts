@@ -29,7 +29,7 @@ const session = (id: string, dirPath = DIR): SessionInfo => ({ id, dirPath });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSessionsStore.setState({ sessionsByDirectory: {} });
+  useSessionsStore.setState({ sessionsByDirectory: {}, namesBySession: {} });
   mockedCommands.killSession.mockResolvedValue(undefined);
 });
 
@@ -155,5 +155,64 @@ describe("sessionsStore.loadDirectory", () => {
     const list = useSessionsStore.getState().sessionsByDirectory[DIR];
     // Known survivor (s1) keeps its slot; new ones append in a stable order.
     expect(list.map((s) => s.id)).toEqual(["s1", "s3", "s4"]);
+  });
+});
+
+describe("sessionsStore session names", () => {
+  it("assigns a non-empty codename to a spawned session", async () => {
+    mockedCommands.spawnSession.mockResolvedValue(session("new"));
+
+    await useSessionsStore.getState().addSession(DIR);
+
+    const name = useSessionsStore.getState().namesBySession["new"];
+    expect(typeof name).toBe("string");
+    expect(name.length).toBeGreaterThan(0);
+  });
+
+  it("gives two spawned sessions distinct names", async () => {
+    mockedCommands.spawnSession
+      .mockResolvedValueOnce(session("a"))
+      .mockResolvedValueOnce(session("b"));
+
+    await useSessionsStore.getState().addSession(DIR);
+    await useSessionsStore.getState().addSession(DIR);
+
+    const { namesBySession } = useSessionsStore.getState();
+    expect(namesBySession["a"]).not.toBe(namesBySession["b"]);
+  });
+
+  it("forgets a session's name when it is removed", async () => {
+    mockedCommands.spawnSession.mockResolvedValue(session("gone"));
+
+    await useSessionsStore.getState().addSession(DIR);
+    expect(useSessionsStore.getState().namesBySession["gone"]).toBeDefined();
+
+    await useSessionsStore.getState().removeSession(DIR, "gone");
+    expect(useSessionsStore.getState().namesBySession["gone"]).toBeUndefined();
+  });
+
+  it("backfills names for sessions surfaced by loadDirectory", async () => {
+    vi.mocked(listSessions).mockResolvedValue([
+      { id: "w1", dirPath: DIR },
+      { id: "w2", dirPath: DIR },
+    ]);
+
+    await useSessionsStore.getState().loadDirectory(DIR);
+
+    const { namesBySession } = useSessionsStore.getState();
+    expect(namesBySession["w1"]?.length).toBeGreaterThan(0);
+    expect(namesBySession["w2"]?.length).toBeGreaterThan(0);
+    expect(namesBySession["w1"]).not.toBe(namesBySession["w2"]);
+  });
+
+  it("keeps an already-assigned name stable across a loadDirectory reconcile", async () => {
+    mockedCommands.spawnSession.mockResolvedValue(session("keep"));
+    await useSessionsStore.getState().addSession(DIR);
+    const original = useSessionsStore.getState().namesBySession["keep"];
+
+    vi.mocked(listSessions).mockResolvedValue([{ id: "keep", dirPath: DIR }]);
+    await useSessionsStore.getState().loadDirectory(DIR);
+
+    expect(useSessionsStore.getState().namesBySession["keep"]).toBe(original);
   });
 });
