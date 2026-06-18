@@ -94,6 +94,7 @@ describe("ipc command wrapper", () => {
       name: "repo",
       isGitRepo: true,
       branch: "main",
+      repo: null,
       lastModified: null,
     };
     invokeMock.mockResolvedValueOnce(info);

@@ -139,6 +139,7 @@ pub fn run() {
             directory::add_directory,
             directory::list_directories,
             directory::remove_directory,
+            directory::reorder_directories,
             directory::discover_directories,
             settings::get_settings,
             settings::set_settings,

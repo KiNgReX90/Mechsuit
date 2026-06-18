@@ -43,6 +43,7 @@ const dir = (path: string, name = path.split("/").pop()!): DirectoryInfo => ({
   name,
   isGitRepo: true,
   branch: "main",
+  repo: null,
   lastModified: null,
 });
 

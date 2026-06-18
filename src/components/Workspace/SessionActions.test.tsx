@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // --- ipc mock --------------------------------------------------------------
@@ -52,16 +52,25 @@ describe("<SessionActions />", () => {
     ).toBeTruthy();
   });
 
-  it("sends /clear + carriage return on Clear", () => {
+  it("sends /clear, then a Ctrl+L redraw, in order on Clear", async () => {
     renderActions();
     screen.getByRole("button", { name: "Clear session s1" }).click();
-    expect(writeSession).toHaveBeenCalledWith("s1", "/clear\r");
+    // The command is written first, synchronously...
+    expect(writeSession).toHaveBeenNthCalledWith(1, "s1", "/clear\r");
+    // ...then a form-feed (Ctrl+L) redraw once that write resolves, so the
+    // running program repaints its screen after the command lands.
+    await waitFor(() =>
+      expect(writeSession).toHaveBeenNthCalledWith(2, "s1", "\f"),
+    );
   });
 
-  it("sends /compact + carriage return on Compact", () => {
+  it("sends /compact, then a Ctrl+L redraw, in order on Compact", async () => {
     renderActions();
     screen.getByRole("button", { name: "Compact session s1" }).click();
-    expect(writeSession).toHaveBeenCalledWith("s1", "/compact\r");
+    expect(writeSession).toHaveBeenNthCalledWith(1, "s1", "/compact\r");
+    await waitFor(() =>
+      expect(writeSession).toHaveBeenNthCalledWith(2, "s1", "\f"),
+    );
   });
 
   it("calls onExpand with the session id when not expanded", () => {
@@ -109,5 +118,28 @@ describe("<SessionActions />", () => {
       screen.getByRole("button", { name }).click();
     }
     expect(onTileClick).not.toHaveBeenCalled();
+  });
+
+  it("gives each control a native title tooltip in the collapsed state", () => {
+    renderActions({ isExpanded: false });
+    expect(
+      screen.getByRole("button", { name: "Clear session s1" }).title,
+    ).toBe("Clear (/clear)");
+    expect(
+      screen.getByRole("button", { name: "Compact session s1" }).title,
+    ).toBe("Compact (/compact)");
+    expect(
+      screen.getByRole("button", { name: "Expand session s1" }).title,
+    ).toBe("Expand");
+    expect(
+      screen.getByRole("button", { name: "Close session s1" }).title,
+    ).toBe("Close");
+  });
+
+  it("titles the Collapse control when expanded", () => {
+    renderActions({ isExpanded: true });
+    expect(
+      screen.getByRole("button", { name: "Collapse session" }).title,
+    ).toBe("Collapse");
   });
 });

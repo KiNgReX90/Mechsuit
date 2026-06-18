@@ -15,15 +15,22 @@
 //! - [`list_sessions`](MechsuitServer::list_sessions) — a directory's live
 //!   sessions (same shape as the `list_sessions` command).
 //! - [`read_session_output`](MechsuitServer::read_session_output) — recent
-//!   scrollback via [`SessionRegistry::recent_output`].
+//!   raw scrollback via [`SessionRegistry::recent_output`].
+//! - [`snapshot_session`](MechsuitServer::snapshot_session) — the RENDERED
+//!   screen (vt100) plus derived status and best-effort structured fields; the
+//!   primary way to read a session's state (see [`screen`]).
 //! - [`send_to_session`](MechsuitServer::send_to_session) — write text to a
 //!   session's PTY (same path as the `write_session` command).
+//! - [`ask_session`](MechsuitServer::ask_session) — settle-aware send: submit
+//!   text, wait until the session replies / asks / times out, return the reply.
 //! - [`discover_projects`](MechsuitServer::discover_projects) — bounded walk of
 //!   a root (default `~/dev`) for candidate session-group directories.
 //! - [`add_project`](MechsuitServer::add_project) — add a directory to the
 //!   managed store (same path as the `add_directory` command).
 //! - [`remove_project`](MechsuitServer::remove_project) — confirm-gated removal
 //!   that kills the directory's live sessions then drops the managed entry.
+//! - `read_file` / `list_dir` / `grep_files` — read-only, managed-directory
+//!   scoped filesystem access for run artifacts (see [`fsread`]).
 //!
 //! Tool dispatch is registered via rmcp's `#[tool_router]`/`#[tool]` macros so a
 //! later item (`commander-workspace-tools`) can extend the router with more
@@ -31,6 +38,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -46,6 +54,19 @@ use crate::directory::DiscoveredDir;
 use crate::events::{COMMANDER_DIRECTORIES_CHANGED, COMMANDER_NAVIGATE, SESSION_PAUSED, PausedEvent};
 use crate::models::{DirectoryInfo, SessionInfo};
 use crate::pty::SessionRegistry;
+
+mod fsread;
+mod screen;
+
+/// `ask_session` poll cadence: how often the settle loop re-reads the screen.
+const ASK_POLL_MS: u64 = 150;
+/// `ask_session` quiet window: time with no output after which a reply is
+/// considered settled (matches the frontend idle debounce / `screen::IDLE_AFTER`).
+const ASK_QUIET_MS: u64 = 2000;
+/// `ask_session` default overall timeout when the caller omits `timeoutMs`.
+/// A brainstorm reply settles in seconds; a work turn can run minutes, so the
+/// caller overrides this per call.
+const ASK_DEFAULT_TIMEOUT_MS: u64 = 60_000;
 
 /// Default bounded walk depth when `discover_projects` is called without
 /// `depth`. Matches the directory module's bounded-walk convention.
@@ -245,6 +266,84 @@ pub struct PauseSessionsParams {
     /// Pause/resume EVERY managed workspace instead of specific ones.
     #[serde(default)]
     pub all: bool,
+}
+
+/// Parameters for `snapshot_session`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotSessionParams {
+    /// Id of the session to snapshot.
+    pub session_id: String,
+}
+
+/// Parameters for `ask_session`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AskSessionParams {
+    /// Id of the session to ask.
+    pub session_id: String,
+    /// The prompt/question. Submitted with Enter; trailing newlines are trimmed.
+    pub text: String,
+    /// Overall wait budget in milliseconds before returning `timeout`. Defaults
+    /// to 60000. Use a small value for a quick brainstorm reply, a large one for
+    /// a long work turn.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+/// Parameters for `read_file`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFileParams {
+    /// Managed project to read from (name, branch, or path).
+    pub query: String,
+    /// Path RELATIVE to the project directory (e.g. `.specs-inferno/state.yaml`).
+    pub path: String,
+    /// Optional cap: return only the last N bytes. Omit for the whole file (up
+    /// to the server's max).
+    #[serde(default)]
+    pub last_bytes: Option<usize>,
+}
+
+/// Parameters for `list_dir`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListDirParams {
+    /// Managed project to list within (name, branch, or path).
+    pub query: String,
+    /// Path RELATIVE to the project directory; omit for the project root.
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+/// Parameters for `grep_files`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GrepFilesParams {
+    /// Managed project to search within (name, branch, or path).
+    pub query: String,
+    /// Case-insensitive literal substring to search for.
+    pub pattern: String,
+    /// Path RELATIVE to the project directory to scope the search; omit to
+    /// search the whole project (skipping .git/node_modules/target/dist).
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+/// Result of an `ask_session` call.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AskResult {
+    /// How the call concluded: `idle` (got an answer), `awaiting-approval`
+    /// (stopped to ask permission — relay it), or `timeout` (still working).
+    settled: screen::Settled,
+    /// Best-effort extracted reply (the session's last assistant message);
+    /// `null` when extraction missed — read `screen` then.
+    reply: Option<String>,
+    /// Whether the session is sitting at an approval prompt.
+    awaiting_input: bool,
+    /// The full rendered screen at settle — the fallback when `reply` is null.
+    screen: String,
 }
 
 // ---- Pure tool logic (testable without a Tauri runtime) --------------------
@@ -619,6 +718,121 @@ impl MechsuitServer {
         let counts = pause_workspaces(&self.registry, &dirs, &queries, all, false, self.events.as_ref());
         json_result(&counts)
     }
+
+    #[tool(
+        description = "Read a session's RENDERED terminal state — the actual \
+        on-screen grid with cursor moves, spinners, and colors applied (NOT raw \
+        scrollback). Returns { status (working/awaiting-approval/idle/error), \
+        awaitingInput, title, model, tokenCount, lastAssistantMessage, cursorRow, \
+        screen }. The structured fields are best-effort; `screen` is the raw \
+        rendered grid fallback. Prefer this over read_session_output for status."
+    )]
+    fn snapshot_session(
+        &self,
+        Parameters(SnapshotSessionParams { session_id }): Parameters<SnapshotSessionParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match self.registry.screen_snapshot(&session_id) {
+            Some(rendered) => json_result(&screen::build_snapshot(&rendered)),
+            None => Err(unknown_session(&session_id)),
+        }
+    }
+
+    #[tool(
+        description = "Send text to a session AND wait for its reply (settle-aware \
+        request/response — use this to ask a session a question or brainstorm \
+        back-and-forth). Submits the text with Enter, then blocks until the \
+        session goes quiet (got an answer), hits an approval prompt, or timeoutMs \
+        elapses. Returns { settled: idle|awaiting-approval|timeout, reply, \
+        awaitingInput, screen }. On awaiting-approval, relay it to the user — do \
+        not keep waiting. For fire-and-forget keystrokes use send_to_session."
+    )]
+    async fn ask_session(
+        &self,
+        Parameters(AskSessionParams { session_id, text, timeout_ms }): Parameters<AskSessionParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        // Submit the prompt with Enter (\r), trimming any trailing newline so we
+        // don't double-submit.
+        let payload = format!("{}\r", text.trim_end_matches(['\n', '\r']));
+        if let Err(msg) = send_to_session(&self.registry, &session_id, &payload) {
+            return Err(ErrorData::invalid_params(msg, None));
+        }
+
+        let timeout = Duration::from_millis(timeout_ms.unwrap_or(ASK_DEFAULT_TIMEOUT_MS));
+        let quiet = Duration::from_millis(ASK_QUIET_MS);
+        let start = Instant::now();
+        loop {
+            tokio::time::sleep(Duration::from_millis(ASK_POLL_MS)).await;
+            let rendered = match self.registry.screen_snapshot(&session_id) {
+                Some(r) => r,
+                // Session ended while we waited.
+                None => return Err(unknown_session(&session_id)),
+            };
+            let approval = screen::matches_approval(&rendered.text);
+            if let Some(settled) =
+                screen::settle_decision(rendered.idle_for, quiet, approval, start.elapsed(), timeout)
+            {
+                return json_result(&AskResult {
+                    settled,
+                    reply: screen::extract_last_assistant(&rendered.text),
+                    awaiting_input: approval,
+                    screen: rendered.text,
+                });
+            }
+        }
+    }
+
+    #[tool(
+        description = "Read a file from a managed project (resolved by name, \
+        branch, or path). `path` is RELATIVE to the project (e.g. \
+        .specs-inferno/state.yaml). Read-only and scoped to the project — paths \
+        escaping it are refused. Use this to inspect INFERNO run artifacts \
+        (state.yaml, work items, briefs) and logs."
+    )]
+    fn read_file(
+        &self,
+        Parameters(ReadFileParams { query, path, last_bytes }): Parameters<ReadFileParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let base = resolve_managed_dir(&self.dirs.directories(), &query)?;
+        match fsread::read_file(&base, &path, last_bytes) {
+            Ok(contents) => Ok(CallToolResult::success(vec![Content::text(contents)])),
+            Err(msg) => Err(ErrorData::invalid_params(msg, None)),
+        }
+    }
+
+    #[tool(
+        description = "List a directory inside a managed project (resolved by \
+        name, branch, or path). `path` is RELATIVE to the project; omit for its \
+        root. Read-only and scoped to the project. Use it to discover artifact \
+        paths (e.g. list .specs-inferno/intents)."
+    )]
+    fn list_dir(
+        &self,
+        Parameters(ListDirParams { query, path }): Parameters<ListDirParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let base = resolve_managed_dir(&self.dirs.directories(), &query)?;
+        match fsread::list_dir(&base, path.as_deref()) {
+            Ok(entries) => json_result(&entries),
+            Err(msg) => Err(ErrorData::invalid_params(msg, None)),
+        }
+    }
+
+    #[tool(
+        description = "Search files in a managed project (resolved by name, \
+        branch, or path) for a case-insensitive literal substring. Optional \
+        `path` scopes the search to a subdirectory. Read-only and scoped; skips \
+        .git/node_modules/target/dist and binary files. Returns file:line:text \
+        matches (bounded)."
+    )]
+    fn grep_files(
+        &self,
+        Parameters(GrepFilesParams { query, pattern, path }): Parameters<GrepFilesParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let base = resolve_managed_dir(&self.dirs.directories(), &query)?;
+        match fsread::grep_files(&base, &pattern, path.as_deref()) {
+            Ok(matches) => json_result(&matches),
+            Err(msg) => Err(ErrorData::invalid_params(msg, None)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -627,8 +841,13 @@ impl ServerHandler for MechsuitServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(
                 "mechsuit session tools: resolve_project, list_sessions, \
-                read_session_output, send_to_session, discover_projects, \
-                add_project, remove_project, pause_sessions, resume_sessions.",
+                read_session_output, snapshot_session, send_to_session, \
+                ask_session, discover_projects, add_project, remove_project, \
+                pause_sessions, resume_sessions, read_file, list_dir, grep_files. \
+                For a session's state prefer snapshot_session (rendered screen + \
+                status); to ask/brainstorm with a session use ask_session and \
+                relay an awaiting-approval settle. Read run artifacts \
+                (.specs-inferno/state.yaml etc.) with read_file/list_dir/grep_files.",
             )
     }
 }
@@ -636,6 +855,18 @@ impl ServerHandler for MechsuitServer {
 /// Standard MCP error for an unknown session id.
 fn unknown_session(session_id: &str) -> ErrorData {
     ErrorData::invalid_params(format!("no such session: {session_id}"), None)
+}
+
+/// Resolve a project `query` (name/branch/path) to a managed directory path, or
+/// an MCP error when nothing matches. Backs the scoped filesystem tools.
+fn resolve_managed_dir(dirs: &[DirectoryInfo], query: &str) -> Result<String, ErrorData> {
+    match match_project(dirs, query) {
+        Some(dir) => Ok(dir.path),
+        None => Err(ErrorData::invalid_params(
+            format!("no managed project matches: {query}"),
+            None,
+        )),
+    }
 }
 
 /// Serialize a value to a JSON text content block. Serialization failure maps
@@ -703,7 +934,7 @@ mod tests {
 
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
-    use crate::pty::{append_output, OutputBuffer, SessionHandle, SessionRegistry};
+    use crate::pty::{new_output_state, record_output, SessionHandle, SessionRegistry};
 
     /// Directory fixture: a fixed list, no persistence / git.
     struct FixedDirs(Vec<DirectoryInfo>);
@@ -794,6 +1025,7 @@ mod tests {
             name: name.to_string(),
             is_git_repo: branch.is_some(),
             branch: branch.map(|b| b.to_string()),
+            repo: branch.map(|_| name.to_string()),
             last_modified: None,
         }
     }
@@ -863,7 +1095,7 @@ mod tests {
         let killer = child.clone_killer();
         let writer = pair.master.take_writer().expect("writer");
         let mut reader = pair.master.try_clone_reader().expect("reader");
-        let output: OutputBuffer = OutputBuffer::default();
+        let (output, screen, last_output) = new_output_state(24, 80);
 
         let id = uuid::Uuid::new_v4().to_string();
         registry.sessions.lock().unwrap().insert(
@@ -874,18 +1106,21 @@ mod tests {
                 writer,
                 killer,
                 output: output.clone(),
+                screen: screen.clone(),
+                last_output: last_output.clone(),
                 kind: crate::models::SessionKind::Workspace,
                 paused: false,
             },
         );
 
-        // Reader thread appends streamed bytes to the scrollback buffer.
+        // Reader thread records streamed bytes into the scrollback buffer, the
+        // vt100 parser, and the last-output clock (mirroring the real path).
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
-                    Ok(n) => append_output(&output, &buf[..n]),
+                    Ok(n) => record_output(&output, &screen, &last_output, &buf[..n]),
                 }
             }
         });
@@ -1184,5 +1419,162 @@ mod tests {
             "a confirmed removal emits directories_changed"
         );
         assert!(!registry.contains(&session), "session killed on confirm");
+    }
+
+    /// The vt100-rendered screen collapses a carriage-return overwrite to the
+    /// final text, while the raw scrollback keeps both writes — the core reason
+    /// snapshot_session beats read_session_output for reading session state
+    /// (spinner repaints / "Inferring…" frames stop piling up).
+    #[test]
+    fn screen_snapshot_renders_over_raw_scrollback() {
+        let registry = SessionRegistry::default();
+        let id = spawn_session(&registry, "/");
+
+        // A loop that overwrites the same line via \r: N=1, N=2, N=3. The typed
+        // command echoes "N=$i" (not the expanded values), so the only source of
+        // "N=1"/"N=3" on screen is the rendered OUTPUT.
+        send_to_session(&registry, &id, "for i in 1 2 3; do printf \"\\rN=$i\"; done\n")
+            .expect("send");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut rendered = String::new();
+        while Instant::now() < deadline {
+            if let Some(snap) = registry.screen_snapshot(&id) {
+                rendered = snap.text.clone();
+                if rendered.contains("N=3") {
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        // Rendered screen shows only the final overwrite.
+        assert!(rendered.contains("N=3"), "rendered should show final value, got: {rendered:?}");
+        assert!(
+            !rendered.contains("N=1"),
+            "intermediate overwrites must be gone from the rendered screen, got: {rendered:?}"
+        );
+        // The raw scrollback, by contrast, retains the overwritten intermediates.
+        let raw = registry.recent_output(&id, None).unwrap();
+        assert!(raw.contains("N=1"), "raw scrollback keeps every write");
+
+        if let Some(mut h) = registry.remove(&id) {
+            let _ = h.kill();
+        }
+    }
+
+    /// snapshot_session dispatches over the rendered screen and returns a status;
+    /// an unknown id errors.
+    #[test]
+    fn snapshot_session_tool_returns_status_and_screen() {
+        let registry = SessionRegistry::default();
+        let sink: Arc<RecordingSink> = Arc::new(RecordingSink::default());
+        let dirs: Arc<dyn DirectorySource> = Arc::new(FixedDirs(fixture()));
+        let store_dir = TempDir::new("snap-store");
+        let store: Arc<dyn DirectoryStore> = Arc::new(TempStore::new(store_dir.path.clone()));
+        let server = MechsuitServer::new(registry.clone(), dirs, store, sink);
+
+        let id = spawn_session(&registry, "/");
+        let result = server
+            .snapshot_session(Parameters(SnapshotSessionParams { session_id: id.clone() }))
+            .expect("snapshot_session ok");
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("status"), "payload carries a status field: {json}");
+
+        assert!(server
+            .snapshot_session(Parameters(SnapshotSessionParams { session_id: "missing".into() }))
+            .is_err());
+
+        if let Some(mut h) = registry.remove(&id) {
+            let _ = h.kill();
+        }
+    }
+
+    /// ask_session submits a prompt and blocks until the session settles, then
+    /// returns the rendered reply. A command that prints then goes quiet settles
+    /// to `idle` and the payload carries the printed marker.
+    #[test]
+    fn ask_session_waits_for_settle_and_returns_reply() {
+        let registry = SessionRegistry::default();
+        let sink: Arc<RecordingSink> = Arc::new(RecordingSink::default());
+        let dirs: Arc<dyn DirectorySource> = Arc::new(FixedDirs(fixture()));
+        let store_dir = TempDir::new("ask-store");
+        let store: Arc<dyn DirectoryStore> = Arc::new(TempStore::new(store_dir.path.clone()));
+        let server = MechsuitServer::new(registry.clone(), dirs, store, sink);
+
+        let id = spawn_session(&registry, "/");
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let result = rt.block_on(server.ask_session(Parameters(AskSessionParams {
+            session_id: id.clone(),
+            text: "printf ASK_REPLY_MARKER".to_string(),
+            timeout_ms: Some(8000),
+        })));
+        let json = serde_json::to_string(&result.expect("ask_session ok")).unwrap();
+        assert!(
+            json.contains("ASK_REPLY_MARKER"),
+            "reply payload should carry the rendered marker: {json}"
+        );
+        assert!(json.contains("idle"), "a quiet reply settles to idle: {json}");
+
+        if let Some(mut h) = registry.remove(&id) {
+            let _ = h.kill();
+        }
+    }
+
+    /// read_file resolves a managed project, reads a scoped artifact, refuses a
+    /// path that escapes the project, and errors on an unknown project.
+    #[test]
+    fn read_file_tool_reads_scoped_artifact_and_refuses_escape() {
+        let registry = SessionRegistry::default();
+        let sink: Arc<RecordingSink> = Arc::new(RecordingSink::default());
+
+        let proj = TempDir::new("read-proj");
+        std::fs::create_dir_all(proj.path.join(".specs-inferno")).unwrap();
+        std::fs::write(
+            proj.path.join(".specs-inferno/state.yaml"),
+            b"status: in_progress\n",
+        )
+        .unwrap();
+
+        let dirs: Arc<dyn DirectorySource> =
+            Arc::new(FixedDirs(vec![dir(&proj.path_str(), "read-proj", Some("main"))]));
+        let store_dir = TempDir::new("read-file-store");
+        let store: Arc<dyn DirectoryStore> = Arc::new(TempStore::new(store_dir.path.clone()));
+        let server = MechsuitServer::new(registry, dirs, store, sink);
+
+        // In-scope artifact reads back.
+        let ok = server
+            .read_file(Parameters(ReadFileParams {
+                query: "read-proj".to_string(),
+                path: ".specs-inferno/state.yaml".to_string(),
+                last_bytes: None,
+            }))
+            .expect("read_file ok");
+        let json = serde_json::to_string(&ok).unwrap();
+        assert!(json.contains("in_progress"), "reads the artifact: {json}");
+
+        // Escaping the project is refused.
+        assert!(
+            server
+                .read_file(Parameters(ReadFileParams {
+                    query: "read-proj".to_string(),
+                    path: "../../../etc/passwd".to_string(),
+                    last_bytes: None,
+                }))
+                .is_err(),
+            "path escaping the project must be refused"
+        );
+
+        // Unknown project → error.
+        assert!(server
+            .read_file(Parameters(ReadFileParams {
+                query: "no-such-project".to_string(),
+                path: "x".to_string(),
+                last_bytes: None,
+            }))
+            .is_err());
     }
 }

@@ -152,6 +152,14 @@ function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
   // receiving even while detached (hidden behind another workspace), so the
   // pane is always current the instant it is re-shown.
 
+  // xterm measures the glyph cell at open() time; if the bundled JetBrains Mono
+  // webfont hadn't decoded yet, that used the fallback metrics. Re-fit once
+  // fonts are ready so cell size matches the real font (no half-row clipping or
+  // mis-sized columns on first paint). Guarded for jsdom, where `fonts` is absent.
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    void document.fonts.ready.then(() => entry.pane.fit());
+  }
+
   return entry;
 }
 

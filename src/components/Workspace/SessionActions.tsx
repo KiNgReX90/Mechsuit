@@ -7,10 +7,30 @@
  *  - Expand / Collapse — fires a parent callback (parent owns expand state).
  *  - Close   — fires `onClose` (parent kills the session + clears UI state).
  *
+ * Clear and Compact follow their command with a Ctrl+L redraw once the command
+ * write resolves (see `sendThenRedraw`), so the running program repaints a clean
+ * screen after the command lands.
+ *
  * Presentational only: no store imports. Every button stops click propagation
  * so it never bubbles to the tile's focus handler.
  */
 import { writeSession } from "../../ipc/commands";
+
+// Ctrl+L (form feed, 0x0C). Sent after a /clear or /compact so the running
+// program (shell / Claude Code) repaints its screen. It carries no carriage
+// return, so it reads as incidental input rather than a submitted line.
+const REDRAW = "\f";
+
+/**
+ * Write a command to a session, then send a Ctrl+L redraw once that first write
+ * resolves. Chaining (rather than firing both at once) guarantees the command
+ * bytes reach the PTY before the redraw, so the screen repaints cleanly after.
+ */
+function sendThenRedraw(sessionId: string, command: string) {
+  void writeSession(sessionId, command).then(() =>
+    writeSession(sessionId, REDRAW),
+  );
+}
 
 export interface SessionActionsProps {
   /** Session these actions operate on. */
@@ -42,12 +62,13 @@ export function SessionActions({
         type="button"
         className="session-action session-action--clear"
         aria-label={`Clear session ${sessionId}`}
+        title="Clear (/clear)"
         onClick={(e) => {
           stop(e);
-          void writeSession(sessionId, "/clear\r");
+          sendThenRedraw(sessionId, "/clear\r");
         }}
       >
-        {/* refresh */}
+        {/* trash */}
         <svg
           viewBox="0 0 16 16"
           width="14"
@@ -57,8 +78,17 @@ export function SessionActions({
           strokeWidth="1.5"
           aria-hidden="true"
         >
-          <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" strokeLinecap="round" />
-          <path d="M12.5 1.5v3h-3" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M2.5 4h11" strokeLinecap="round" />
+          <path
+            d="M6 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M4 4l.6 9a1.2 1.2 0 0 0 1.2 1.1h4.4a1.2 1.2 0 0 0 1.2-1.1L13 4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M6.7 6.5v5M9.3 6.5v5" strokeLinecap="round" />
         </svg>
       </button>
 
@@ -66,9 +96,10 @@ export function SessionActions({
         type="button"
         className="session-action session-action--compact"
         aria-label={`Compact session ${sessionId}`}
+        title="Compact (/compact)"
         onClick={(e) => {
           stop(e);
-          void writeSession(sessionId, "/compact\r");
+          sendThenRedraw(sessionId, "/compact\r");
         }}
       >
         {/* box / package */}
@@ -94,6 +125,7 @@ export function SessionActions({
           type="button"
           className="session-action session-action--collapse"
           aria-label="Collapse session"
+          title="Collapse"
           onClick={(e) => {
             stop(e);
             onCollapse(sessionId);
@@ -121,6 +153,7 @@ export function SessionActions({
           type="button"
           className="session-action session-action--expand"
           aria-label={`Expand session ${sessionId}`}
+          title="Expand"
           onClick={(e) => {
             stop(e);
             onExpand(sessionId);
@@ -149,6 +182,7 @@ export function SessionActions({
         type="button"
         className="session-action session-action--close"
         aria-label={`Close session ${sessionId}`}
+        title="Close"
         onClick={(e) => {
           stop(e);
           onClose(sessionId);

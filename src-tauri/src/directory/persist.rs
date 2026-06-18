@@ -115,6 +115,85 @@ fn detached_short_sha(path: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// The repository's name for `path` — the identity that the on-disk folder
+/// belongs to, which often differs from the folder name (e.g. a clone in a
+/// renamed directory, or a worktree). Prefers the remote `origin` basename so
+/// it is stable across worktrees and renames; falls back to the worktree-aware
+/// repo-root directory name when there is no remote. `None` when `path` is not
+/// a git repo (or git cannot resolve it) — callers treat that as "no repo
+/// identity beyond the folder name".
+pub fn detect_repo(path: &str) -> Option<String> {
+    if let Some(url) = remote_origin_url(path) {
+        if let Some(name) = repo_name_from_url(&url) {
+            return Some(name);
+        }
+    }
+    repo_root_name(path)
+}
+
+/// The configured URL of the `origin` remote, or `None` when there is none
+/// (or git fails / is missing).
+fn remote_origin_url(path: &str) -> Option<String> {
+    Command::new("git")
+        .args(["-C", path, "remote", "get-url", "origin"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Parse a git remote URL into its repository name: the last path segment with
+/// any trailing `.git` removed. Handles scp-style (`git@host:owner/repo.git`),
+/// URL forms (`https://…/repo.git`, `ssh://…:22/team/repo`), bare local paths,
+/// and a trailing slash. `None` when no non-empty segment remains.
+pub fn repo_name_from_url(url: &str) -> Option<String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    // scp-style URLs separate the path with ':'; everything else uses '/'.
+    let last = trimmed
+        .rsplit(|c| c == '/' || c == ':')
+        .next()
+        .unwrap_or("");
+    let name = last.strip_suffix(".git").unwrap_or(last).trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// The repo-root directory name, resolved to the MAIN worktree even when `path`
+/// is a linked worktree. The common git dir (`--git-common-dir`) is shared by
+/// every worktree and lives in the main worktree as `…/<repo>/.git`, so its
+/// parent's name is the repository's name regardless of which worktree we are
+/// standing in. `None` when git cannot resolve it (e.g. not a repo).
+fn repo_root_name(path: &str) -> Option<String> {
+    let common = Command::new("git")
+        .args([
+            "-C",
+            path,
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    let common = Path::new(&common);
+    // `…/<repo>/.git` -> the repo root is the parent; for an unusual layout
+    // (bare repo, custom GIT_DIR) fall back to the common dir's own name.
+    let root = if common.file_name().map(|n| n == ".git").unwrap_or(false) {
+        common.parent()
+    } else {
+        Some(common)
+    };
+    root.and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+}
+
 /// Recency of `path` as a Unix epoch **seconds** value, or `None` when it
 /// cannot be determined.
 ///
@@ -185,11 +264,13 @@ fn max_opt(acc: Option<i64>, candidate: Option<i64>) -> Option<i64> {
 /// Build a fresh [`DirectoryInfo`] for `path` with git status detected now.
 fn info_for(path: &str) -> DirectoryInfo {
     let (is_git_repo, branch) = detect_git(path);
+    let repo = if is_git_repo { detect_repo(path) } else { None };
     DirectoryInfo {
         path: path.to_string(),
         name: display_name(path),
         is_git_repo,
         branch,
+        repo,
         last_modified: detect_last_modified(path),
     }
 }
@@ -223,6 +304,30 @@ pub fn remove(data_dir: &Path, path: String) -> Result<(), String> {
         write_paths(data_dir, &paths)?;
     }
     Ok(())
+}
+
+/// Core of `reorder_directories`: re-emit the stored paths in the order given by
+/// `ordered`. Only paths that are currently managed are honored (an unknown path
+/// is ignored), and any managed path the request omits is appended in its prior
+/// relative order — so a stale or partial order from the UI can never silently
+/// drop a directory. Writes the result back to the store.
+pub fn reorder(data_dir: &Path, ordered: &[String]) -> Result<(), String> {
+    let current = read_paths(data_dir)?;
+    let mut next: Vec<String> = Vec::with_capacity(current.len());
+    // Honor the requested order, but only for paths we actually manage (and
+    // never duplicate one the request lists twice).
+    for p in ordered {
+        if current.iter().any(|c| c == p) && !next.iter().any(|n| n == p) {
+            next.push(p.clone());
+        }
+    }
+    // Append any managed path the request omitted, preserving its prior order.
+    for c in &current {
+        if !next.iter().any(|n| n == c) {
+            next.push(c.clone());
+        }
+    }
+    write_paths(data_dir, &next)
 }
 
 #[cfg(test)]
@@ -326,6 +431,111 @@ mod tests {
     }
 
     #[test]
+    fn repo_name_from_url_handles_common_forms() {
+        // HTTPS, with and without the `.git` suffix.
+        assert_eq!(
+            repo_name_from_url("https://github.com/KiNgReX90/Mechsuit.git").as_deref(),
+            Some("Mechsuit")
+        );
+        assert_eq!(
+            repo_name_from_url("https://github.com/KiNgReX90/Mechsuit").as_deref(),
+            Some("Mechsuit")
+        );
+        // scp-style (the segment lives after the ':').
+        assert_eq!(
+            repo_name_from_url("git@github.com:KiNgReX90/Mechsuit.git").as_deref(),
+            Some("Mechsuit")
+        );
+        // ssh:// URL with a port.
+        assert_eq!(
+            repo_name_from_url("ssh://git@host:22/team/Bar.git").as_deref(),
+            Some("Bar")
+        );
+        // Local path remote.
+        assert_eq!(repo_name_from_url("/srv/git/foo.git").as_deref(), Some("foo"));
+        // Trailing slash is tolerated.
+        assert_eq!(
+            repo_name_from_url("https://h/x/Mechsuit.git/").as_deref(),
+            Some("Mechsuit")
+        );
+        // Nothing usable -> None.
+        assert_eq!(repo_name_from_url(""), None);
+        assert_eq!(repo_name_from_url("   "), None);
+        assert_eq!(repo_name_from_url(".git"), None);
+    }
+
+    #[test]
+    fn detect_repo_prefers_remote_origin_basename() {
+        let tmp = TempDir::new("repo-remote");
+        init_repo(&tmp.path);
+        // A remote whose basename differs from the (generated) folder name.
+        git(
+            &tmp.path,
+            &["remote", "add", "origin", "https://github.com/acme/Mechsuit.git"],
+        );
+        assert_eq!(detect_repo(&tmp.path_str()).as_deref(), Some("Mechsuit"));
+    }
+
+    #[test]
+    fn detect_repo_falls_back_to_repo_root_name() {
+        let tmp = TempDir::new("repo-noremote");
+        init_repo(&tmp.path);
+        // No remote configured: the repo name is the repo-root directory name.
+        let expected = tmp
+            .path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(detect_repo(&tmp.path_str()), Some(expected));
+    }
+
+    #[test]
+    fn detect_repo_is_worktree_aware_via_common_dir() {
+        // A linked worktree (no remote) resolves to the MAIN repo's name, not
+        // the worktree directory's own name.
+        let tmp = TempDir::new("repo-main");
+        init_repo(&tmp.path);
+        let main_name = tmp.path.file_name().unwrap().to_string_lossy().into_owned();
+
+        let wt = tmp.path.join("wt-feature");
+        git(
+            &tmp.path,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature",
+                wt.to_str().unwrap(),
+            ],
+        );
+        let wt_repo = detect_repo(&wt.to_string_lossy());
+        assert_eq!(
+            wt_repo.as_deref(),
+            Some(main_name.as_str()),
+            "a worktree should report its main repo's name"
+        );
+    }
+
+    #[test]
+    fn detect_repo_non_repo_is_none() {
+        let tmp = TempDir::new("repo-nongit");
+        assert_eq!(detect_repo(&tmp.path_str()), None);
+    }
+
+    #[test]
+    fn info_for_populates_repo_for_git_repos() {
+        let tmp = TempDir::new("repo-info");
+        init_repo(&tmp.path);
+        git(
+            &tmp.path,
+            &["remote", "add", "origin", "git@github.com:acme/Widget.git"],
+        );
+        let info = info_for(&tmp.path_str());
+        assert_eq!(info.repo.as_deref(), Some("Widget"));
+    }
+
+    #[test]
     fn add_rejects_nonexistent_path() {
         let store = TempDir::new("store-missing");
         let result = add(&store.path, "/no/such/path/mechsuit-xyzzy".into());
@@ -355,6 +565,58 @@ mod tests {
 
         // removing an absent path is not an error
         remove(&store.path, tpath).unwrap();
+    }
+
+    #[test]
+    fn reorder_sets_new_order() {
+        let store = TempDir::new("store-reorder");
+        let a = TempDir::new("reorder-a");
+        let b = TempDir::new("reorder-b");
+        let c = TempDir::new("reorder-c");
+        add(&store.path, a.path_str()).unwrap();
+        add(&store.path, b.path_str()).unwrap();
+        add(&store.path, c.path_str()).unwrap();
+
+        reorder(&store.path, &[c.path_str(), a.path_str(), b.path_str()]).unwrap();
+
+        let listed: Vec<String> =
+            list(&store.path).unwrap().into_iter().map(|d| d.path).collect();
+        assert_eq!(listed, vec![c.path_str(), a.path_str(), b.path_str()]);
+    }
+
+    #[test]
+    fn reorder_ignores_unknown_and_appends_missing() {
+        let store = TempDir::new("store-reorder2");
+        let a = TempDir::new("reorder2-a");
+        let b = TempDir::new("reorder2-b");
+        let c = TempDir::new("reorder2-c");
+        add(&store.path, a.path_str()).unwrap();
+        add(&store.path, b.path_str()).unwrap();
+        add(&store.path, c.path_str()).unwrap();
+
+        // The request references an unknown path and omits `b`.
+        let unknown = "/no/such/reorder/path".to_string();
+        reorder(&store.path, &[c.path_str(), unknown, a.path_str()]).unwrap();
+
+        let listed: Vec<String> =
+            list(&store.path).unwrap().into_iter().map(|d| d.path).collect();
+        // c, a from the request; unknown dropped; b appended (was omitted).
+        assert_eq!(listed, vec![c.path_str(), a.path_str(), b.path_str()]);
+    }
+
+    #[test]
+    fn reorder_empty_input_is_noop() {
+        let store = TempDir::new("store-reorder3");
+        let a = TempDir::new("reorder3-a");
+        let b = TempDir::new("reorder3-b");
+        add(&store.path, a.path_str()).unwrap();
+        add(&store.path, b.path_str()).unwrap();
+
+        reorder(&store.path, &[]).unwrap();
+
+        let listed: Vec<String> =
+            list(&store.path).unwrap().into_iter().map(|d| d.path).collect();
+        assert_eq!(listed, vec![a.path_str(), b.path_str()]);
     }
 
     #[test]

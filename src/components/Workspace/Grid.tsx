@@ -14,43 +14,48 @@ import { computeGridLayout } from "../../lib/gridLayout";
 import { useStatusStore } from "../../state/statusStore";
 import { useSessionsStore } from "../../state/sessionsStore";
 import { usePausedStore } from "../../state/pausedStore";
-import { setSessionPaused, writeSession } from "../../ipc/commands";
-import { focusTerminal } from "../../lib/terminalPool";
+import { setSessionPaused } from "../../ipc/commands";
+import { focusSession } from "../../lib/focusSession";
 import { SessionActions } from "./SessionActions";
 
-// Ctrl+L (form feed, 0x0C). Sent to a session's PTY when you switch INTO it so
-// the running program (shell / Claude Code) clears its screen — a clean view on
-// every focus change. It carries no carriage return, so it reads as incidental
-// input and never re-arms the pool's prompt re-alert.
-const CLEAR_SCREEN = "\f";
+/** A status that warrants a visible color cue (the alert-worthy states). */
+export type TileStatusKind = "ready" | "awaiting-approval" | "error";
 
 /**
- * Map a session's status record to a tile status class. Returns null for the
- * neutral default (no entry or `working`). A `ready` session blinks green to
- * alert until acknowledged — either by the engine's blink window elapsing or the
- * user focusing it — after which it clears back to neutral (no status color), so
- * a finished tile never lingers green. FOCUS WINS: callers must drop this class
- * entirely for the focused tile so it never also carries a status color.
+ * Map a session's status record to its visible status kind, or null for the
+ * neutral default (no entry or `working`). A `ready` session alerts until
+ * acknowledged — either by the engine's blink window elapsing or the user
+ * focusing it — after which it clears back to neutral, so a finished session
+ * never lingers green. FOCUS WINS: callers drop this entirely for the focused
+ * session so it never also carries a status color. Shared by the grid tiles and
+ * the expanded-mode tab strip, which dress the same kinds with their own prefix.
  */
-export function tileStatusClass(record: SessionStatusState | undefined): string | null {
+export function tileStatusKind(
+  record: SessionStatusState | undefined,
+): TileStatusKind | null {
   if (!record) return null;
   switch (record.status) {
     case "ready":
-      return record.acknowledged ? null : "workspace-tile--ready";
+      return record.acknowledged ? null : "ready";
     case "awaiting-approval":
-      return "workspace-tile--awaiting-approval";
+      return "awaiting-approval";
     case "error":
-      return "workspace-tile--error";
+      return "error";
     case "working":
     default:
       return null;
   }
 }
 
+/** The grid-tile class for a status record (`workspace-tile--<kind>`), or null. */
+export function tileStatusClass(record: SessionStatusState | undefined): string | null {
+  const kind = tileStatusKind(record);
+  return kind ? `workspace-tile--${kind}` : null;
+}
+
 export interface GridProps {
   sessions: SessionInfo[];
   focusedSessionId: string | null;
-  onFocus: (sessionId: string) => void;
   onExpand: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
 }
@@ -58,7 +63,6 @@ export interface GridProps {
 export function Grid({
   sessions,
   focusedSessionId,
-  onFocus,
   onExpand,
   onClose,
 }: GridProps) {
@@ -106,22 +110,10 @@ export function Grid({
                 data-session-id={session.id}
                 data-focused={isFocused ? "true" : "false"}
                 key={session.id}
-                onClick={() => {
-                  // Switching INTO an unfocused, live tile clears its screen
-                  // (Ctrl+L). Re-clicking the focused tile is a no-op so cursor
-                  // placement / text selection still work; a paused tile is
-                  // SIGSTOPped, so a clear would only queue to wipe its frozen
-                  // screen on resume.
-                  if (!isFocused && !isPaused) {
-                    void writeSession(session.id, CLEAR_SCREEN);
-                  }
-                  onFocus(session.id);
-                  // Pull DOM focus onto the terminal even when the click landed
-                  // on the tile chrome (header/padding) rather than the xterm
-                  // textarea — and on a re-click of the already-focused tile,
-                  // where the `focused` prop wouldn't change to re-trigger it.
-                  focusTerminal(session.id);
-                }}
+                // Switch focus to this tile: clears its screen when switching
+                // in (Ctrl+L), selects it, and pulls DOM focus — the same
+                // routine Shift+Arrow navigation uses (see focusSession).
+                onClick={() => focusSession(session.id)}
                 // Only the focused tile forwards keystrokes to its Terminal;
                 // others stop input at the capture phase before it reaches xterm.
                 onKeyDownCapture={(e) => {

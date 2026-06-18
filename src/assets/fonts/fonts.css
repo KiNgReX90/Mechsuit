@@ -1,0 +1,67 @@
+/*
+ * Self-hosted application fonts — fully offline.
+ *
+ * The .woff2 files in this directory are VENDORED into the repo (committed, not
+ * fetched), and these @font-face rules point at them with relative paths that
+ * Vite fingerprints into `dist/assets/` at build time. There is no CDN, no
+ * Google-hosted fonts, and no remote stylesheet import anywhere — the running
+ * app never touches the network for type. Latin subset, only the weights the UI
+ * uses (Inter 400/500/600/700; JetBrains Mono 400/600/700).
+ *
+ * `font-display: swap` so first paint is never blocked on font decode; the
+ * fallback stacks in `--font-sans` / `--font-mono` cover the swap window.
+ *
+ * NOTE: the offlineFonts.test.ts guard scans this whole file (comments
+ * included) and fails on any remote URL or remote import — keep prose clean.
+ */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./inter-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./inter-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./inter-latin-700-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./jetbrains-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./jetbrains-mono-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./jetbrains-mono-latin-700-normal.woff2") format("woff2");
+}

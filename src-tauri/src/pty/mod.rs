@@ -11,7 +11,7 @@
 pub mod registry;
 
 pub use registry::{
-    append_output, OutputBuffer, SessionHandle, SessionRegistry, SharedSessions,
+    new_output_state, record_output, ScreenSnapshot, SessionHandle, SessionRegistry, SharedSessions,
 };
 
 use std::io::{Read, Write};
@@ -90,9 +90,11 @@ where
 
     let id = uuid::Uuid::new_v4().to_string();
 
-    // Bounded scrollback shared with the reader thread; a clone lives on the
-    // handle so the in-process MCP server can read it via `recent_output`.
-    let output: OutputBuffer = OutputBuffer::default();
+    // Per-session output sinks shared with the reader thread; clones live on the
+    // handle so the in-process MCP server can read the raw scrollback via
+    // `recent_output` and the rendered screen via `screen_snapshot`.
+    let (output, screen, last_output) =
+        new_output_state(registry::DEFAULT_ROWS, registry::DEFAULT_COLS);
 
     let handle = SessionHandle {
         dir_path: cwd.to_string(),
@@ -100,15 +102,20 @@ where
         writer,
         killer,
         output: output.clone(),
+        screen: screen.clone(),
+        last_output: last_output.clone(),
         kind,
         paused: false,
     };
     sessions.lock().unwrap().insert(id.clone(), handle);
 
-    // Reader thread: stream PTY output until EOF, appending each chunk to the
-    // bounded scrollback buffer in addition to emitting `session://output`.
+    // Reader thread: stream PTY output until EOF, recording each chunk into the
+    // scrollback buffer, the vt100 parser, and the last-output clock in addition
+    // to emitting `session://output`.
     let reader_id = id.clone();
     let reader_output = output;
+    let reader_screen = screen;
+    let reader_last = last_output;
     thread::spawn(move || {
         // A large buffer lets a burst of output drain in one read instead of
         // many 4 KB reads, so a chatty child (e.g. an agent running several
@@ -116,14 +123,27 @@ where
         // a Rust→webview IPC hop with a JSON-serialized payload, so coalescing
         // at the source is the cheapest lever on print-heavy lag.
         let mut buf = [0u8; 64 * 1024];
+        // Stitch the stream so a multi-byte UTF-8 sequence straddling a read
+        // boundary is never emitted half-decoded (which renders as `�`). The
+        // raw scrollback / vt100 parser still get every byte via `record_output`
+        // — only the frontend emit path is boundary-aligned.
+        let mut utf8 = registry::Utf8Stream::default();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    append_output(&reader_output, &buf[..n]);
-                    emit_output(reader_id.clone(), buf[..n].to_vec());
+                    record_output(&reader_output, &reader_screen, &reader_last, &buf[..n]);
+                    let ready = utf8.push(&buf[..n]);
+                    if !ready.is_empty() {
+                        emit_output(reader_id.clone(), ready);
+                    }
                 }
             }
+        }
+        // Surface any incomplete trailing bytes left when the child exited.
+        let tail = utf8.flush();
+        if !tail.is_empty() {
+            emit_output(reader_id.clone(), tail);
         }
     });
 

@@ -53,6 +53,15 @@ pub fn remove_directory(app: AppHandle, path: String) -> Result<(), String> {
     persist::remove(&dir, path)
 }
 
+/// Re-emit the managed directory list in `paths` order (drag-to-reorder in the
+/// sidebar). Delegates to the unit-tested [`persist::reorder`], which ignores
+/// unknown paths and appends any managed path the request omitted.
+#[tauri::command]
+pub fn reorder_directories(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    persist::reorder(&dir, &paths)
+}
+
 /// Discover candidate directories under `root` to a bounded `depth` (default 2),
 /// flagging which are already managed. When `root` is omitted it resolves to the
 /// configured workspace root (settings), falling back to the runtime `$HOME/dev`

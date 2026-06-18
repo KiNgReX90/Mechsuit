@@ -43,6 +43,15 @@ export function removeDirectory(path: string): Promise<void> {
   return invoke<void>("remove_directory", { path });
 }
 
+/**
+ * Persist a new ordering of the managed directories (drag-to-reorder in the
+ * sidebar). `paths` is the full list in the desired order; the backend ignores
+ * unknown paths and appends any managed path omitted from the list.
+ */
+export function reorderDirectories(paths: string[]): Promise<void> {
+  return invoke<void>("reorder_directories", { paths });
+}
+
 /** Spawn a PTY session rooted at the given directory; returns its info. */
 export function spawnSession(dirPath: string): Promise<SessionInfo> {
   return invoke<SessionInfo>("spawn_session", { dirPath });

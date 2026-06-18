@@ -11,7 +11,9 @@ import {
   addDirectory,
   listDirectories,
   removeDirectory,
+  reorderDirectories,
 } from "../ipc/commands";
+import { reorderForDrop } from "../lib/reorder";
 import type { DirectoryInfo } from "../types";
 
 export interface DirectoriesState {
@@ -26,6 +28,15 @@ export interface DirectoriesState {
    * path beyond invoking the command.
    */
   remove: (path: string) => Promise<void>;
+
+  /**
+   * Move the directory at `fromIndex` into the insertion `slot` (0..n, as
+   * computed from the drag's cursor position). Updates local order immediately
+   * for a snappy drop, then persists the new path order. A drop that does not
+   * change order is a no-op (no state change, no ipc call). If persistence
+   * rejects, re-`load`s from disk so the UI reflects the stored truth.
+   */
+  reorder: (fromIndex: number, slot: number) => Promise<void>;
 }
 
 export const useDirectoriesStore = create<DirectoriesState>((set, get) => ({
@@ -49,5 +60,19 @@ export const useDirectoriesStore = create<DirectoriesState>((set, get) => ({
     await removeDirectory(path);
     const existing = get().directories;
     set({ directories: existing.filter((d) => d.path !== path) });
+  },
+
+  reorder: async (fromIndex, slot) => {
+    const existing = get().directories;
+    const next = reorderForDrop(existing, fromIndex, slot);
+    if (next === existing) return; // drop did not change order
+    set({ directories: next });
+    try {
+      await reorderDirectories(next.map((d) => d.path));
+    } catch {
+      // Persistence failed (e.g. a disk write error). Resync from the store so
+      // the sidebar reflects the on-disk truth rather than a phantom order.
+      await get().load();
+    }
   },
 }));

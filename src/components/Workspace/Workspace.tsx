@@ -23,10 +23,13 @@ import { useUiStore } from "../../state/uiStore";
 import { useStatusStore } from "../../state/statusStore";
 import { usePausedStore } from "../../state/pausedStore";
 import { setSessionPaused } from "../../ipc/commands";
+import { focusSession } from "../../lib/focusSession";
 
 import { ActionBar } from "./ActionBar";
+import { ExpandedTabs } from "./ExpandedTabs";
 import { Grid, tileStatusClass } from "./Grid";
 import { SessionActions } from "./SessionActions";
+import { useGridNavigation } from "./useGridNavigation";
 import "./Workspace.css";
 
 // Stable empty reference so the selector never returns a fresh array (which
@@ -50,8 +53,31 @@ function Workspace() {
   const removeSession = useSessionsStore((s) => s.removeSession);
 
   const statusBySession = useStatusStore((s) => s.statusBySession);
-  const namesBySession = useSessionsStore((s) => s.namesBySession);
   const pausedIds = usePausedStore((s) => s.pausedIds);
+
+  // Shift+Arrow moves focus across the grid (and cycles the expanded pane).
+  useGridNavigation();
+
+  // Keep keyboard focus inside the visible workspace. `focusedSessionId` is
+  // global, so switching in from another workspace leaves it pointing at that
+  // workspace's pane: no tile here is focused, DOM focus falls back to <body>,
+  // keystrokes go nowhere, and a `ready` tile shows green instead of the focus
+  // border. When the focused session isn't one of this directory's, adopt this
+  // workspace's own pane (the valid expanded one, else the first tile) so typing
+  // lands here without a manual click. A null focus is the genuine "nothing
+  // selected" state (startup, or just closed the focused pane) — the auto-spawn
+  // effect and the status borders depend on it, so leave it untouched. No screen
+  // clear: we're re-routing input, not "entering" the pane the way a click does.
+  useEffect(() => {
+    if (!focusedSessionId) return;
+    if (sessions.length === 0) return;
+    if (sessions.some((s) => s.id === focusedSessionId)) return;
+    const validExpanded =
+      expandedSessionId && sessions.some((s) => s.id === expandedSessionId)
+        ? expandedSessionId
+        : null;
+    focusSession(validExpanded ?? sessions[0].id, { clear: false });
+  }, [sessions, focusedSessionId, expandedSessionId]);
 
   // Populate the store for whichever directory is selected. Sessions spawned
   // for other directories remain in the store untouched. If, once loaded, the
@@ -155,10 +181,15 @@ function Workspace() {
                 .join(" ")}
               data-testid="workspace-expanded"
             >
-              <div className="workspace-tile-header">
-                <span className="workspace-tile-name" title={namesBySession[expanded]}>
-                  {namesBySession[expanded]}
-                </span>
+              <div className="workspace-tile-header workspace-expanded-header">
+                {/* The tab strip lists every session so you can switch the
+                    full-screen pane by click OR Shift+Arrow; it replaces the
+                    single name label since the active tab already names it. */}
+                <ExpandedTabs
+                  sessions={sessions}
+                  activeSessionId={expanded}
+                  onSelect={(id) => focusSession(id, { expand: true })}
+                />
                 <SessionActions
                   sessionId={expanded}
                   isExpanded
@@ -193,7 +224,6 @@ function Workspace() {
         <Grid
           sessions={sessions}
           focusedSessionId={focusedSessionId}
-          onFocus={setFocusedSessionId}
           onExpand={setExpandedSessionId}
           onClose={handleCloseSession}
         />

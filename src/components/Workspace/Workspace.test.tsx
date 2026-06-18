@@ -58,6 +58,9 @@ beforeEach(() => {
   usePausedStore.setState({ pausedIds: new Set() });
   // Default: no pre-existing sessions on the backend.
   mockedCommands.listSessions.mockResolvedValue([]);
+  // writeSession returns Promise<void> in production; honor that so callers
+  // that chain off it (e.g. Clear/Compact's post-command Ctrl+L redraw) work.
+  mockedCommands.writeSession.mockResolvedValue(undefined);
 });
 
 /** Seed a status record directly, mirroring how sessions/ui stores are seeded. */
@@ -555,5 +558,107 @@ describe("Workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Resume session a" }));
     expect(mockedCommands.setSessionPaused).toHaveBeenCalledWith("a", false);
+  });
+
+  describe("focus reconciliation on workspace switch", () => {
+    it("moves focus to the workspace's first session when entering with stale cross-directory focus", async () => {
+      // Focus still points at a pane from the workspace we just left (focus is
+      // global and the switch never moved it). The new workspace must adopt one
+      // of its own sessions so keystrokes land here without a manual click.
+      seedSessions([session("a"), session("b")]);
+      useUiStore.setState({ focusedSessionId: "stale-from-other-dir" });
+
+      render(<Workspace />);
+      await waitFor(() =>
+        expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+      );
+
+      await waitFor(() =>
+        expect(useUiStore.getState().focusedSessionId).toBe("a"),
+      );
+      expect(tileFor("a")).toHaveAttribute("data-focused", "true");
+    });
+
+    it("adopts the valid expanded session, not the first tile, when reconciling", async () => {
+      seedSessions([session("a"), session("b")]);
+      // Expanded points at a real session here; focus is stale. Reconciling must
+      // land on the expanded pane so its border + DOM focus stay consistent.
+      useUiStore.setState({
+        focusedSessionId: "stale-from-other-dir",
+        expandedSessionId: "b",
+      });
+
+      render(<Workspace />);
+      await screen.findByTestId("workspace-expanded");
+
+      await waitFor(() =>
+        expect(useUiStore.getState().focusedSessionId).toBe("b"),
+      );
+    });
+
+    it("leaves focus untouched when it already belongs to this workspace", async () => {
+      seedSessions([session("a"), session("b")]);
+      useUiStore.setState({ focusedSessionId: "b" });
+
+      render(<Workspace />);
+      await waitFor(() =>
+        expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+      );
+
+      expect(useUiStore.getState().focusedSessionId).toBe("b");
+    });
+
+    it("does not auto-focus a fresh workspace that had no prior focus", async () => {
+      // Null focus is the genuine "nothing selected yet" state (startup, or just
+      // closed the focused pane); status borders depend on it, so leave it alone.
+      seedSessions([session("a"), session("b")]);
+      // focusedSessionId starts null (see beforeEach).
+
+      render(<Workspace />);
+      await waitFor(() =>
+        expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+      );
+
+      expect(useUiStore.getState().focusedSessionId).toBeNull();
+    });
+
+    it("reconciling does not clear the adopted pane's screen (no Ctrl+L)", async () => {
+      seedSessions([session("a"), session("b")]);
+      useUiStore.setState({ focusedSessionId: "stale-from-other-dir" });
+
+      render(<Workspace />);
+      await waitFor(() =>
+        expect(useUiStore.getState().focusedSessionId).toBe("a"),
+      );
+
+      // Reconcile only re-routes input; it must not redraw the pane the way an
+      // explicit tile click (which sends Ctrl+L) does.
+      expect(mockedCommands.writeSession).not.toHaveBeenCalledWith("a", "\f");
+    });
+
+    it("reconciles focus when the selected directory changes at runtime", async () => {
+      useSessionsStore.setState({
+        sessionsByDirectory: { [OTHER_DIR]: [session("other-1", OTHER_DIR)] },
+      });
+      mockedCommands.listSessions.mockResolvedValue([
+        session("dir-1", DIR),
+        session("other-1", OTHER_DIR),
+      ]);
+      useUiStore.setState({ focusedSessionId: "dir-1" });
+
+      render(<Workspace />);
+      await waitFor(() =>
+        expect(screen.getAllByTestId("workspace-tile")).toHaveLength(1),
+      );
+
+      act(() => {
+        useUiStore.getState().setSelectedDirectoryPath(OTHER_DIR);
+      });
+
+      // Focus followed the switch onto OTHER_DIR's own session.
+      await waitFor(() =>
+        expect(useUiStore.getState().focusedSessionId).toBe("other-1"),
+      );
+    });
   });
 });

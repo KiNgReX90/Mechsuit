@@ -12,6 +12,13 @@ export interface DirectoryInfo {
   isGitRepo: boolean;
   branch: string | null;
   /**
+   * The repository's name, distinct from the on-disk folder `name`: the remote
+   * `origin` basename when there is one, else the (worktree-aware) repo-root
+   * directory name. `null` for a non-git directory. Re-evaluated per
+   * `listDirectories` call.
+   */
+  repo: string | null;
+  /**
    * Newest working-tree file mtime as Unix epoch **seconds**; `null` when it
    * cannot be determined. Re-evaluated per `listDirectories` call.
    */

@@ -67,6 +67,9 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  /* The application window itself never scrolls — content is contained by the
+     shell and panes manage their own overflow. */
+  overflow: hidden;
 }
 
 body {
@@ -101,6 +104,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
   font-family: var(--font-sans);
   color: var(--text);
   /* Faint accent light cast from the top-right + cyan glow bottom-right. */

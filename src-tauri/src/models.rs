@@ -21,6 +21,11 @@ pub struct DirectoryInfo {
     pub name: String,
     pub is_git_repo: bool,
     pub branch: Option<String>,
+    /// The repository's name, distinct from the on-disk folder `name`: the
+    /// remote `origin` basename when there is one, else the (worktree-aware)
+    /// repo-root directory name. `None` for a non-git directory. Re-evaluated
+    /// per `list_directories` call alongside git status; not persisted.
+    pub repo: Option<String>,
     /// Newest working-tree file mtime as Unix epoch **seconds**. `None` when it
     /// cannot be determined. Re-evaluated per `list_directories` call (like git
     /// status); not persisted.

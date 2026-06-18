@@ -52,9 +52,13 @@
   cursor: default;
 }
 
-/* Icon-only bar buttons (add-terminal + quick-spawn): square, centered glyph. */
+/* Icon-only bar buttons (add-terminal + quick-spawn + Commander): square,
+   flex-centered glyph. Without this the Commander button fell back to the
+   text-button padding, baseline-aligning its SVG and leaving dead space below
+   it (the "uncentered icon with padding on the bottom"). */
 .workspace-action--add,
-.workspace-action--quick {
+.workspace-action--quick,
+.workspace-action--commander {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -260,6 +264,72 @@
 
 .workspace-expanded {
   flex: 1 1 auto;
+}
+
+/*
+ * Expanded-view tab strip: a centered row of session tabs in the header, so the
+ * full-screen pane can be switched by click or Shift+Arrow. It takes the
+ * header's flexible middle; the session actions stay pinned to the right.
+ */
+.expanded-tabs {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.expanded-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.expanded-tab {
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  max-width: 12rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.expanded-tab:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* Active tab = the expanded session: accent, never a status color (focus wins). */
+.expanded-tab--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+/* Status tints mirror the tile borders so a hidden session still announces itself. */
+.expanded-tab--awaiting-approval {
+  border-color: var(--status-awaiting);
+  color: var(--status-awaiting);
+}
+.expanded-tab--error {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+.expanded-tab--ready {
+  border-color: var(--status-ready);
+  color: var(--status-ready);
+  animation: workspace-tile-ready-blink 0.5s steps(1, end) infinite;
+}
+.expanded-tab--paused {
+  opacity: 0.5;
 }
 
 .workspace-tile .terminal-pane,

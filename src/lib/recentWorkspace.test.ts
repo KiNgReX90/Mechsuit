@@ -10,6 +10,7 @@ const dir = (path: string, lastModified: number | null): DirectoryInfo => ({
   name: path.split("/").pop() ?? path,
   isGitRepo: false,
   branch: null,
+  repo: null,
   lastModified,
 });
 

@@ -39,6 +39,12 @@ const gitDir: DirectoryInfo = {
   name: "repo",
   isGitRepo: true,
   branch: "main",
+  // Renamed clone: the remote basename ("acme-app") differs from the on-disk
+  // folder ("repo"), so the card leads with the repo name and shows "repo" as
+  // the folder subtitle. The many `findByText("repo")` load-gates below thus
+  // still match exactly one element (the subtitle). The plain-clone case where
+  // the two are equal has its own dedicated test.
+  repo: "acme-app",
   // Edited recently: fresh, not stale.
   lastModified: NOW_SECS - 3 * DAY,
 };
@@ -48,6 +54,7 @@ const plainDir: DirectoryInfo = {
   name: "notes",
   isGitRepo: false,
   branch: null,
+  repo: null,
   // Edited long ago: past the 7-day stale threshold.
   lastModified: NOW_SECS - 30 * DAY,
 };
@@ -133,14 +140,64 @@ describe("Sidebar", () => {
   it("shows the branch for git repos and hides it for non-git directories", async () => {
     render(<Sidebar />);
 
+    // "main" is the branch label (the dirs are named repo/notes), so it shows
+    // exactly once — for the git repo only; the plain dir contributes none.
     expect(await screen.findByText("main")).toBeInTheDocument();
+    expect(screen.getAllByText("main")).toHaveLength(1);
+  });
 
-    // Only the git repo has a branch line; the plain dir contributes none.
-    const branchNodes = screen
-      .getAllByText(/./)
-      .filter((el) => el.className === "sidebar-directory-branch");
-    expect(branchNodes).toHaveLength(1);
-    expect(branchNodes[0]).toHaveTextContent("main");
+  it("leads the identity with a repository icon for git repos only", async () => {
+    // gitDir is a git repo → its primary line is led by a repo glyph; plainDir
+    // is a non-git folder → it carries no repo glyph (a folder glyph instead).
+    render(<Sidebar />);
+    await screen.findByText("repo");
+
+    const repoIcons = screen.getAllByTestId("repo-icon");
+    expect(repoIcons).toHaveLength(1);
+  });
+
+  it("leads with the repo name and keeps the folder as a subtitle when they differ", async () => {
+    const renamed: DirectoryInfo = {
+      path: "/home/ruben/dev/itris-mechsuit",
+      name: "itris-mechsuit",
+      isGitRepo: true,
+      branch: "main",
+      // Remote basename differs from the on-disk folder (a renamed clone).
+      repo: "Mechsuit",
+      lastModified: NOW_SECS - DAY,
+    };
+    mockedCommands.listDirectories.mockResolvedValue([renamed]);
+
+    render(<Sidebar />);
+
+    // The bold primary identity is the repo name, not the folder.
+    const primary = await screen.findByText("Mechsuit");
+    expect(primary).toHaveClass("sidebar-directory-name");
+    // The folder name is still shown (as the secondary subtitle).
+    expect(screen.getByText("itris-mechsuit")).toBeInTheDocument();
+  });
+
+  it("still shows the folder subtitle for a plain clone (repo equals the folder name)", async () => {
+    // A plain clone whose remote basename equals its on-disk folder STILL names
+    // its directory: the folder subtitle is shown (not collapsed), so the name
+    // appears on both the identity line and the folder subtitle.
+    const plainClone: DirectoryInfo = {
+      path: "/home/ruben/solo",
+      name: "solo",
+      isGitRepo: true,
+      branch: "main",
+      repo: "solo",
+      lastModified: NOW_SECS - DAY,
+    };
+    mockedCommands.listDirectories.mockResolvedValue([plainClone]);
+
+    render(<Sidebar />);
+    await screen.findByText("solo", { selector: ".sidebar-directory-name" });
+
+    expect(document.querySelector(".sidebar-directory-folder")).not.toBeNull();
+    expect(
+      document.querySelector(".sidebar-directory-folder-name")?.textContent,
+    ).toBe("solo");
   });
 
   it("adds a directory via the + button and shows it in the list", async () => {
@@ -149,6 +206,7 @@ describe("Sidebar", () => {
       name: "added",
       isGitRepo: false,
       branch: null,
+      repo: null,
       lastModified: null,
     };
     mockedCommands.addDirectory.mockResolvedValue(newDir);
@@ -203,6 +261,7 @@ describe("Sidebar", () => {
   it("adds a discovered candidate when its dropdown entry is clicked", async () => {
     mockedCommands.addDirectory.mockResolvedValue({
       ...candidates[0],
+      repo: null,
       lastModified: null,
     });
     render(<Sidebar />);
@@ -413,6 +472,114 @@ describe("Sidebar", () => {
     await screen.findByText("repo");
 
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+  });
+
+  describe("drag-to-reorder", () => {
+    const ROW_H = 50;
+
+    /** A DOMRect-ish stub (jsdom returns zeros for getBoundingClientRect). */
+    const rect = (top: number, height: number): DOMRect =>
+      ({
+        x: 0,
+        y: top,
+        left: 0,
+        right: 200,
+        width: 200,
+        top,
+        bottom: top + height,
+        height,
+        toJSON: () => {},
+      }) as DOMRect;
+
+    // Lay the list at y=0 and each row at i*ROW_H so row midpoints are
+    // deterministic (row0=25, row1=75) and slot math is predictable.
+    beforeEach(() => {
+      mockedCommands.reorderDirectories.mockResolvedValue(undefined);
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+        function (this: HTMLElement) {
+          if (this.classList.contains("sidebar-list")) return rect(0, 300);
+          if (this.classList.contains("sidebar-directory-item")) {
+            const items = Array.from(
+              this.parentElement?.querySelectorAll(".sidebar-directory-item") ??
+                [],
+            );
+            return rect(items.indexOf(this) * ROW_H, ROW_H);
+          }
+          return rect(0, 0);
+        },
+      );
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** The draggable button for a directory by its visible name. */
+    const buttonFor = (name: string): HTMLElement =>
+      screen.getByText(name).closest("button") as HTMLElement;
+
+    it("reorders and persists the new order when a row is dragged and dropped", async () => {
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      const repo = buttonFor("repo"); // row 0
+      // Grab repo, move below both rows (past the 5px threshold), drop.
+      fireEvent.pointerDown(repo, { clientY: 10, button: 0 });
+      fireEvent.pointerMove(window, { clientY: 120 });
+      fireEvent.pointerUp(window, { clientY: 120 });
+
+      await waitFor(() =>
+        expect(mockedCommands.reorderDirectories).toHaveBeenCalledWith([
+          "/home/ruben/notes",
+          "/home/ruben/repo",
+        ]),
+      );
+    });
+
+    it("shows an insertion line while dragging and removes it on drop", async () => {
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      fireEvent.pointerDown(buttonFor("repo"), { clientY: 10, button: 0 });
+      fireEvent.pointerMove(window, { clientY: 120 });
+
+      expect(screen.getByTestId("sidebar-drop-line")).toBeInTheDocument();
+
+      fireEvent.pointerUp(window, { clientY: 120 });
+      await waitFor(() =>
+        expect(screen.queryByTestId("sidebar-drop-line")).not.toBeInTheDocument(),
+      );
+    });
+
+    it("treats a press without movement as a normal select, not a reorder", async () => {
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      const repo = buttonFor("repo");
+      fireEvent.pointerDown(repo, { clientY: 10, button: 0 });
+      fireEvent.pointerUp(window, { clientY: 11 }); // 1px — under threshold
+      fireEvent.click(repo);
+
+      expect(mockedCommands.reorderDirectories).not.toHaveBeenCalled();
+      expect(useUiStore.getState().selectedDirectoryPath).toBe(
+        "/home/ruben/repo",
+      );
+    });
+
+    it("does not also select the directory after a completed drag", async () => {
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      const repo = buttonFor("repo");
+      fireEvent.pointerDown(repo, { clientY: 10, button: 0 });
+      fireEvent.pointerMove(window, { clientY: 120 });
+      fireEvent.pointerUp(window, { clientY: 120 });
+      // The browser would fire a click after the drag's pointerup; it must not
+      // select the row the drag just moved.
+      fireEvent.click(repo);
+
+      expect(useUiStore.getState().selectedDirectoryPath).toBeNull();
+    });
   });
 
   it("cancels the remove confirm without killing or removing", async () => {

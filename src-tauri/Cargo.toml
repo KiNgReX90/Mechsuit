@@ -23,6 +23,16 @@ portable-pty = "0.9"
 libc = "0.2"
 uuid = { version = "1", features = ["v4"] }
 
+# Terminal emulation for Commander observability: each session's raw PTY bytes
+# are also fed to a vt100 parser so `snapshot_session` / `ask_session` can return
+# the RENDERED screen grid (cursor moves, spinner repaints, and SGR codes
+# applied) instead of raw scrollback noise.
+vt100 = "0.15"
+# Faithful Rust port of the frontend statusParser heuristics (approval/error
+# prompts) plus best-effort model/token/last-message extractors. Already in the
+# dependency tree transitively; pinned directly here for the `mcp::screen` module.
+regex = "1"
+
 # In-process MCP server (Commander). rmcp ships the streamable-HTTP server
 # transport as a tower service; axum/hyper serve it over a localhost-only TCP
 # listener and tokio provides the async runtime for the server task.

@@ -156,6 +156,7 @@ describe("App shell", () => {
       name: "older",
       isGitRepo: false,
       branch: null,
+      repo: null,
       lastModified: 100,
     };
     const newer: DirectoryInfo = {
@@ -163,6 +164,7 @@ describe("App shell", () => {
       name: "newer",
       isGitRepo: true,
       branch: "main",
+      repo: null,
       lastModified: 999,
     };
     vi.mocked(listDirectories).mockResolvedValue([older, newer]);

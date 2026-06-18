@@ -252,15 +252,17 @@
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Name row: name (flexes, ellipsizes) on the left, status badges on the right. */
+/* Identity row: repo name + branch chip grouped on the left, status badges
+   pinned to the right. */
 .sidebar-directory-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   width: 100%;
 }
 
-/* Meta row: branch on the left, "edited …" pinned to the right. */
+/* Meta row: the on-disk folder (shown for every repo) on the left, "edited …"
+   pinned to the right. */
 .sidebar-directory-meta {
   display: flex;
   align-items: center;
@@ -286,8 +288,18 @@
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Leading identity glyph (repo book / folder): the PRIMARY accent (blue), held
+   distinct from the branch glyph's cyan so repo and branch never share a color.
+   Never shrinks. */
+.sidebar-directory-icon {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
 .sidebar-directory-name {
-  flex: 1 1 auto;
+  /* Content-width so the branch chip sits flush after it; shrinks + ellipsizes
+     (never grows to shove the chip toward the badges). */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -298,44 +310,58 @@
   letter-spacing: 0.01em;
 }
 
-/* Per-workspace session status badges (colored count circles). */
+/* Per-workspace session status badges (colored count circles), pinned to the
+   right edge of the identity row. */
 .sidebar-directory-status {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .sidebar-status-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.05rem;
-  height: 1.05rem;
-  padding: 0 0.25rem;
+  /* Equal min-width/height → a true circle for single digits, growing to a
+     pill for 2+ digits. Symmetric padding + tabular figures keep the count
+     optically dead-centered. */
+  box-sizing: border-box;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.36rem;
   border-radius: 999px;
-  border: 1.5px solid currentColor;
-  /* Number stays white; the state color lives on the border + tinted fill. */
-  color: var(--text);
+  border: 1px solid transparent;
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.74rem;
   font-weight: 700;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
+/* Each state: tinted gradient fill, a same-hue ring, and a soft outer glow so
+   the count reads as a lit control-deck indicator rather than a flat pill. */
 .sidebar-status-badge--ready {
-  border-color: var(--status-ready);
-  background: rgba(63, 185, 80, 0.12);
+  color: #d7ffdd;
+  border-color: rgba(63, 185, 80, 0.75);
+  background: linear-gradient(180deg, rgba(63, 185, 80, 0.32), rgba(63, 185, 80, 0.14));
+  box-shadow: 0 0 8px -1px rgba(63, 185, 80, 0.55);
 }
 
 .sidebar-status-badge--awaiting-approval {
-  border-color: var(--status-awaiting);
-  background: rgba(227, 161, 58, 0.12);
+  color: #ffe7bd;
+  border-color: rgba(227, 161, 58, 0.78);
+  background: linear-gradient(180deg, rgba(227, 161, 58, 0.34), rgba(227, 161, 58, 0.14));
+  box-shadow: 0 0 8px -1px rgba(227, 161, 58, 0.55);
 }
 
 .sidebar-status-badge--error {
-  border-color: var(--status-error);
-  background: rgba(247, 109, 109, 0.12);
+  color: #ffd3d3;
+  border-color: rgba(247, 109, 109, 0.8);
+  background: linear-gradient(180deg, rgba(247, 109, 109, 0.34), rgba(247, 109, 109, 0.14));
+  box-shadow: 0 0 8px -1px rgba(247, 109, 109, 0.55);
 }
 
 .sidebar-directory-remove {
@@ -429,19 +455,71 @@
   color: var(--text);
 }
 
+/* Branch chip: a faint pill sitting just after the repo name. Caps its width
+   and clips so a long branch name never shoves the status badges off-row. */
 .sidebar-directory-branch {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
+  max-width: 12rem;
   white-space: nowrap;
+  padding: 0.06rem 0.42rem 0.06rem 0.34rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-3);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--status-ready);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
-/* Fixed-size branch glyph: never shrinks or distorts under a long branch name. */
+/* Fixed-size branch glyph: never shrinks or distorts under a long branch name.
+   Tinted with the SECONDARY accent (cyan) so the branch reads as a distinct
+   axis from the primary repo glyph (which carries --accent blue) — they must
+   never share an icon color. */
 .sidebar-directory-branch svg {
   flex: 0 0 auto;
+  color: var(--accent-2);
+}
+
+/* Branch name truncates at the FRONT: `direction: rtl` puts the ellipsis on the
+   left while the strong-LTR branch characters keep their order, so a long
+   `feature/…` collapses to `…/the-meaningful-tail` instead of losing it. */
+.sidebar-directory-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+/* Folder subtitle: the on-disk directory name, shown on every repo card (even
+   when it matches the repo name) so the card always states its directory. A
+   folder glyph + a muted, ellipsizing name. */
+.sidebar-directory-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.68rem;
+  /* Was --text-dim, which was nearly illegible on the card; --text-muted keeps
+     it clearly secondary to the repo name but actually readable. */
+  color: var(--text-muted);
+}
+
+.sidebar-directory-folder svg {
+  flex: 0 0 auto;
+  opacity: 1;
+}
+
+.sidebar-directory-folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
