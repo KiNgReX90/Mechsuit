@@ -39,9 +39,9 @@ intents:
         depends_on: [wi-06-graph-view]
   - id: collected-view
     title: Collected View — All Workspaces On One Screen
-    status: in_progress
+    status: completed
     claimed_at: 2026-06-18T06:40:04Z
-    claimed_by: inferno-intent/collected-view-20260618-064004
+    completed_at: 2026-06-18T13:20:18Z
     created: 2026-06-18
     work_items:
       - id: wi-01-entry-scaffold
