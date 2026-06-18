@@ -1,0 +1,37 @@
+version: 1
+intents:
+  - id: sessions-graph
+    title: Live Sessions Graph — Mission Control
+    status: pending
+    created: 2026-06-17
+    work_items:
+      - id: wi-01-worktree-discovery
+        status: pending
+        complexity: medium
+        depends_on: []
+      - id: wi-02-subagent-detection
+        status: pending
+        complexity: medium
+        depends_on: []
+        checkpoint_1: approved
+      - id: wi-03-node-status-rollup
+        status: pending
+        complexity: low
+        depends_on: []
+      - id: wi-04-graph-model-store
+        status: pending
+        complexity: medium
+        depends_on: [wi-01-worktree-discovery, wi-02-subagent-detection, wi-03-node-status-rollup]
+      - id: wi-05-topbar-screen-scaffold
+        status: pending
+        complexity: medium
+        depends_on: []
+      - id: wi-06-graph-view
+        status: pending
+        complexity: high
+        depends_on: [wi-04-graph-model-store, wi-05-topbar-screen-scaffold, wi-03-node-status-rollup]
+        checkpoint_1: approved
+      - id: wi-07-node-control-surface
+        status: pending
+        complexity: medium
+        depends_on: [wi-06-graph-view]

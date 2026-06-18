@@ -1,0 +1,25 @@
+# INFERNO per-project configuration. Read by the orchestrator + planner.
+# Every key is optional; a missing key falls back to host/project defaults.
+
+# Planning -> build transition (read by the planner).
+#   full   - auto-route into the orchestrator and start building after decompose.
+#   review - stop after decompose so the work items + design docs can be read.
+autonomy:
+  level: review
+
+# Worker model tiers for the orchestrator's complexity gate. Values are passed
+# VERBATIM as the per-dispatch model override; on Claude Code these are the
+# Agent-tool aliases opus / sonnet / haiku (NOT full model IDs).
+#   strong - reasoning-bearing items (complexity medium/high)
+#   cheap  - mechanical items (complexity low, or kind config-only/docs-only/test)
+models:
+  strong: opus
+  cheap: sonnet
+
+# Authoritative finalize gate: the orchestrator runs these ONCE on the integrated
+# tree before merging the intent. A non-zero exit blocks the merge.
+verification:
+  finalize:
+    - npm run build
+    - npm test
+    - cargo test --manifest-path src-tauri/Cargo.toml
