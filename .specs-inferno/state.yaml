@@ -53,7 +53,7 @@ intents:
         complexity: medium
         depends_on: []
       - id: wi-03-workspace-bay
-        status: pending
+        status: completed
         complexity: medium
         depends_on: []
       - id: wi-04-collected-workspace-integration
