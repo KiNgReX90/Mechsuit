@@ -16,6 +16,7 @@
  */
 import "@xterm/xterm/css/xterm.css";
 
+import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -36,11 +37,79 @@ export interface TerminalPane {
 interface PoolEntry {
   term: XTerm;
   fitAddon: FitAddon;
+  /** GPU/2D canvas renderer for the VISIBLE pane. Loaded on acquire (the surface
+   *  is attached to a laid-out, visible container) and disposed on release — the
+   *  xterm instance itself is NOT disposed, so scrollback survives the detach.
+   *  Undefined while detached; re-created on the next acquire. */
+  canvasAddon: CanvasAddon | undefined;
   /** The element xterm renders into; re-parented across attach/detach, so it
    *  (and the rendered scrollback inside it) survives a workspace switch. */
   surface: HTMLDivElement;
   dataDisposable: { dispose: () => void };
+  /** Output chunks received since the last flush, in arrival order. They are
+   *  concatenated and written in one `term.write()` per animation frame; the
+   *  Rust reader already aligns chunks on UTF-8 boundaries, so joining strings
+   *  never re-splits a multi-byte sequence. */
+  pending: string;
+  /** Handle for the scheduled per-frame flush, or undefined when none is armed. */
+  flushHandle: number | undefined;
   pane: TerminalPane;
+}
+
+// Per-frame flush scheduler. The browser coalesces a burst of small output
+// chunks into one paint by deferring the `term.write()` to the next animation
+// frame. The scheduler is indirected through a swappable pair so it stays
+// deterministic under test: real `requestAnimationFrame` when present, a
+// microtask fallback otherwise (and tests install a microtask scheduler so a
+// flushed `await Promise.resolve()` drives a frame — see `__setFlushScheduler`).
+type FlushScheduler = {
+  schedule: (cb: () => void) => number;
+  cancel: (handle: number) => void;
+};
+
+const microtaskScheduler: FlushScheduler = {
+  schedule: (cb) => {
+    queueMicrotask(cb);
+    return 0;
+  },
+  cancel: () => {},
+};
+
+function defaultScheduler(): FlushScheduler {
+  if (typeof requestAnimationFrame === "function") {
+    return {
+      schedule: (cb) => requestAnimationFrame(cb),
+      cancel: (h) =>
+        typeof cancelAnimationFrame === "function" ? cancelAnimationFrame(h) : undefined,
+    };
+  }
+  return microtaskScheduler;
+}
+
+let flushScheduler: FlushScheduler = defaultScheduler();
+
+const scheduleFlush = (cb: () => void): number => flushScheduler.schedule(cb);
+const cancelFlush = (handle: number): void => flushScheduler.cancel(handle);
+
+/** TEST ONLY. Swap the per-frame flush scheduler so tests can drive flushes
+ *  deterministically (e.g. a microtask scheduler) regardless of whether the
+ *  jsdom environment provides a timer-backed `requestAnimationFrame`. Pass no
+ *  argument to restore the environment default. */
+export function __setFlushScheduler(scheduler?: FlushScheduler): void {
+  flushScheduler = scheduler ?? defaultScheduler();
+}
+
+/** Concatenate the buffered chunks and write them in one go, clearing the buffer
+ *  and the armed frame. Safe to call eagerly (e.g. on dispose). */
+function flushEntry(entry: PoolEntry): void {
+  if (entry.flushHandle !== undefined) {
+    cancelFlush(entry.flushHandle);
+    entry.flushHandle = undefined;
+  }
+  if (entry.pending.length === 0) return;
+  const data = entry.pending;
+  entry.pending = "";
+  entry.term.write(data);
 }
 
 // The app's "command deck" palette, so panes blend into their tiles instead of
@@ -86,7 +155,19 @@ function ensureOutputSubscription(): void {
   if (outputSubscribed) return;
   outputSubscribed = true;
   void onSessionOutput((payload) => {
-    pool.get(payload.sessionId)?.term.write(payload.data);
+    // Route by id, then buffer instead of writing immediately. A burst of small
+    // chunks for one session is concatenated (in arrival order) and written once
+    // on the next animation frame, instead of one synchronous `term.write()` per
+    // event — the dominant main-thread cost when many panes stream at once.
+    const entry = pool.get(payload.sessionId);
+    if (!entry) return;
+    entry.pending += payload.data;
+    if (entry.flushHandle === undefined) {
+      entry.flushHandle = scheduleFlush(() => {
+        entry.flushHandle = undefined;
+        flushEntry(entry);
+      });
+    }
   }).then((fn) => {
     // The pool may have emptied before this promise resolved; if so, tear the
     // subscription down immediately rather than leaking it.
@@ -100,6 +181,23 @@ function teardownOutputSubscriptionIfIdle(): void {
   outputSubscribed = false;
   outputUnlisten?.();
   outputUnlisten = undefined;
+}
+
+/** Load the canvas renderer onto a visible pane's xterm, once. The renderer is
+ *  only meaningful while the surface is attached to a laid-out container, so it
+ *  is created on acquire and disposed on release; re-acquire re-creates it. */
+function attachRenderer(entry: PoolEntry): void {
+  if (entry.canvasAddon) return;
+  const canvasAddon = new CanvasAddon();
+  entry.term.loadAddon(canvasAddon);
+  entry.canvasAddon = canvasAddon;
+}
+
+/** Dispose the canvas renderer (if attached) WITHOUT touching the xterm instance,
+ *  so scrollback survives a detach. No-op when already detached. */
+function detachRenderer(entry: PoolEntry): void {
+  entry.canvasAddon?.dispose();
+  entry.canvasAddon = undefined;
 }
 
 function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
@@ -133,8 +231,11 @@ function createEntry(sessionId: string, container: HTMLElement): PoolEntry {
   const entry: PoolEntry = {
     term,
     fitAddon,
+    canvasAddon: undefined,
     surface,
     dataDisposable,
+    pending: "",
+    flushHandle: undefined,
     pane: {
       sessionId,
       fit() {
@@ -178,6 +279,10 @@ export function acquireTerminal(sessionId: string, container: HTMLElement): Term
   } else if (entry.surface.parentElement !== container) {
     container.appendChild(entry.surface);
   }
+  // The pane is now (or already) attached to a visible container, so load the
+  // fast canvas renderer. Idempotent: re-acquiring an already-attached pane does
+  // not stack a second renderer.
+  attachRenderer(entry);
   return entry.pane;
 }
 
@@ -196,7 +301,13 @@ export function focusTerminal(sessionId: string): void {
  * in the background and re-attaches instantly with full scrollback.
  */
 export function releaseTerminal(sessionId: string): void {
-  pool.get(sessionId)?.surface.remove();
+  const entry = pool.get(sessionId);
+  if (!entry) return;
+  // Dispose the canvas renderer now that the pane is detached (a hidden pane
+  // needs no GPU/2D renderer), but leave the xterm instance and its scrollback
+  // intact so re-acquire re-shows it instantly.
+  detachRenderer(entry);
+  entry.surface.remove();
 }
 
 /**
@@ -209,6 +320,11 @@ export function disposeTerminal(sessionId: string): void {
   const entry = pool.get(sessionId);
   if (!entry) return;
   pool.delete(sessionId);
+  // Flush any output buffered for the as-yet-unfired frame before tearing the
+  // instance down (and cancel the frame), so no bytes are lost and no rAF
+  // callback fires after disposal.
+  flushEntry(entry);
+  detachRenderer(entry);
   entry.dataDisposable.dispose();
   entry.term.dispose();
   entry.surface.remove();

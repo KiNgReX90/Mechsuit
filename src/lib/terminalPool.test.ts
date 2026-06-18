@@ -9,7 +9,7 @@
  *  - dispose is the only teardown — it disposes xterm, the input handler, and
  *    the output subscription, after which a fresh instance is built on demand.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutputEvent } from "../types";
 
 // --- xterm shim ------------------------------------------------------------
@@ -21,6 +21,7 @@ const onDataDisposeSpy = vi.fn();
 const fitSpy = vi.fn();
 const openSpy = vi.fn();
 const focusSpy = vi.fn();
+const loadAddonSpy = vi.fn();
 let constructed = 0;
 let dataHandler: ((data: string) => void) | undefined;
 
@@ -29,7 +30,7 @@ vi.mock("@xterm/xterm", () => ({
     cols = 80;
     rows = 24;
     write = writeSpy;
-    loadAddon = vi.fn();
+    loadAddon = loadAddonSpy;
     open = openSpy;
     dispose = disposeSpy;
     focus = focusSpy;
@@ -46,6 +47,21 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
     fit = fitSpy;
+  },
+}));
+
+// CanvasAddon mock: jsdom has no 2D canvas renderer. Track construction and
+// disposal so we can prove the renderer is attached on acquire and disposed on
+// release without ever disposing the xterm instance itself.
+let canvasConstructed = 0;
+const canvasDisposeSpy = vi.fn();
+
+vi.mock("@xterm/addon-canvas", () => ({
+  CanvasAddon: class {
+    dispose = canvasDisposeSpy;
+    constructor() {
+      canvasConstructed += 1;
+    }
   },
 }));
 
@@ -70,6 +86,7 @@ vi.mock("../ipc/commands", () => ({
 import { resizeSession, writeSession } from "../ipc/commands";
 import { onSessionOutput } from "../ipc/events";
 import {
+  __setFlushScheduler,
   acquireTerminal,
   disposeTerminal,
   focusTerminal,
@@ -82,6 +99,20 @@ function newContainer(): HTMLDivElement {
   return el;
 }
 
+// The per-frame output flush is driven by requestAnimationFrame in the browser.
+// vitest's jsdom backs rAF with a macrotask timer, which a single awaited
+// microtask would not drain; swap in a microtask scheduler so the existing
+// `await Promise.resolve()` pattern deterministically drives one flush.
+beforeEach(() => {
+  __setFlushScheduler({
+    schedule: (cb) => {
+      queueMicrotask(cb);
+      return 0;
+    },
+    cancel: () => {},
+  });
+});
+
 afterEach(() => {
   // The pool is a module-level singleton; tear down every session a test may
   // use so the next test starts from a clean slate (and the shared output
@@ -90,9 +121,11 @@ afterEach(() => {
   disposeTerminal("p2");
   vi.clearAllMocks();
   constructed = 0;
+  canvasConstructed = 0;
   outputCb = undefined;
   dataHandler = undefined;
   document.body.innerHTML = "";
+  __setFlushScheduler(); // restore the environment default
 });
 
 describe("terminalPool", () => {
@@ -125,6 +158,7 @@ describe("terminalPool", () => {
     await Promise.resolve(); // let the onSessionOutput subscription resolve
     releaseTerminal("p1");
     outputCb?.({ sessionId: "p1", data: "background" });
+    await Promise.resolve(); // let the coalesced per-frame flush run
     expect(writeSpy).toHaveBeenCalledWith("background");
   });
 
@@ -138,10 +172,11 @@ describe("terminalPool", () => {
     expect(c2.childElementCount).toBe(1); // re-attached
   });
 
-  it("only writes output destined for the matching session", () => {
+  it("only writes output destined for the matching session", async () => {
     acquireTerminal("p1", newContainer());
     outputCb?.({ sessionId: "p1", data: "mine" });
     outputCb?.({ sessionId: "other", data: "theirs" });
+    await Promise.resolve(); // let the coalesced per-frame flush run
     expect(writeSpy).toHaveBeenCalledTimes(1);
     expect(writeSpy).toHaveBeenCalledWith("mine");
   });
@@ -155,10 +190,11 @@ describe("terminalPool", () => {
     expect(onSessionOutput).toHaveBeenCalledTimes(1);
   });
 
-  it("routes the shared subscription to the addressed terminal", () => {
+  it("routes the shared subscription to the addressed terminal", async () => {
     acquireTerminal("p1", newContainer());
     acquireTerminal("p2", newContainer());
     outputCb?.({ sessionId: "p2", data: "hi-p2" });
+    await Promise.resolve(); // let the coalesced per-frame flush run
     expect(writeSpy).toHaveBeenCalledTimes(1);
     expect(writeSpy).toHaveBeenCalledWith("hi-p2");
   });
@@ -216,5 +252,100 @@ describe("terminalPool", () => {
     disposeTerminal("p1");
     acquireTerminal("p1", newContainer());
     expect(constructed).toBe(2);
+  });
+
+  // --- canvas renderer lifecycle -------------------------------------------
+
+  it("attaches a canvas renderer addon when a pane is acquired", () => {
+    acquireTerminal("p1", newContainer());
+    // The fit addon and the canvas renderer are both loaded onto the xterm.
+    expect(canvasConstructed).toBe(1);
+    expect(loadAddonSpy).toHaveBeenCalled();
+  });
+
+  it("disposes the canvas renderer on release WITHOUT disposing the xterm", () => {
+    acquireTerminal("p1", newContainer());
+    releaseTerminal("p1");
+    // Renderer detaches with the surface, but the live instance survives.
+    expect(canvasDisposeSpy).toHaveBeenCalledTimes(1);
+    expect(disposeSpy).not.toHaveBeenCalled();
+  });
+
+  it("re-creates the canvas renderer on re-acquire after release", () => {
+    acquireTerminal("p1", newContainer());
+    releaseTerminal("p1");
+    acquireTerminal("p1", newContainer());
+    // xterm instance reused (scrollback intact); a fresh renderer is attached.
+    expect(constructed).toBe(1);
+    expect(canvasConstructed).toBe(2);
+  });
+
+  it("does not duplicate the canvas renderer if re-acquired while still attached", () => {
+    const c = newContainer();
+    acquireTerminal("p1", c);
+    acquireTerminal("p1", c); // re-acquire without an intervening release
+    expect(canvasConstructed).toBe(1);
+  });
+
+  it("disposes the canvas renderer on disposeTerminal", () => {
+    acquireTerminal("p1", newContainer());
+    disposeTerminal("p1");
+    expect(canvasDisposeSpy).toHaveBeenCalledTimes(1);
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // --- per-frame output coalescing -----------------------------------------
+
+  it("coalesces a burst of chunks into a single ordered write per frame", async () => {
+    acquireTerminal("p1", newContainer());
+    outputCb?.({ sessionId: "p1", data: "a" });
+    outputCb?.({ sessionId: "p1", data: "b" });
+    outputCb?.({ sessionId: "p1", data: "c" });
+    // Nothing written synchronously — the chunks are buffered for the frame.
+    expect(writeSpy).not.toHaveBeenCalled();
+    await Promise.resolve(); // drive the per-frame flush
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith("abc");
+  });
+
+  it("concatenates multi-byte chunks byte-exact, never re-splitting", async () => {
+    acquireTerminal("p1", newContainer());
+    // The Rust reader aligns chunks on UTF-8 boundaries; the pool only joins.
+    outputCb?.({ sessionId: "p1", data: "héllo " });
+    outputCb?.({ sessionId: "p1", data: "🚀 wörld" });
+    await Promise.resolve();
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith("héllo 🚀 wörld");
+  });
+
+  it("keeps each session's buffer separate when coalescing", async () => {
+    acquireTerminal("p1", newContainer());
+    acquireTerminal("p2", newContainer());
+    outputCb?.({ sessionId: "p1", data: "one" });
+    outputCb?.({ sessionId: "p2", data: "two" });
+    outputCb?.({ sessionId: "p1", data: "-more" });
+    await Promise.resolve();
+    expect(writeSpy).toHaveBeenCalledTimes(2);
+    expect(writeSpy).toHaveBeenCalledWith("one-more");
+    expect(writeSpy).toHaveBeenCalledWith("two");
+  });
+
+  it("flushes a pending buffer before disposing the terminal (no lost output)", async () => {
+    acquireTerminal("p1", newContainer());
+    await Promise.resolve(); // resolve subscription
+    outputCb?.({ sessionId: "p1", data: "tail" });
+    // Dispose before the frame fires: the buffer must be flushed, not dropped.
+    disposeTerminal("p1");
+    expect(writeSpy).toHaveBeenCalledWith("tail");
+  });
+
+  it("does not write into a session after it has been disposed", async () => {
+    acquireTerminal("p1", newContainer());
+    await Promise.resolve();
+    disposeTerminal("p1");
+    writeSpy.mockClear();
+    outputCb?.({ sessionId: "p1", data: "late" });
+    await Promise.resolve();
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 });
