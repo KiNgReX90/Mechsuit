@@ -255,8 +255,10 @@
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Identity row: repo name + branch chip grouped on the left, status badges
-   pinned to the right. */
+/* Identity row: repo name + branch chip grouped on the left. The status badges
+   used to live here, but their width changes as sessions change state, which
+   reflowed the name/branch on every status change — they now live on the meta
+   row instead (see .sidebar-directory-meta-right). */
 .sidebar-directory-head {
   display: flex;
   align-items: center;
@@ -264,8 +266,8 @@
   width: 100%;
 }
 
-/* Meta row: the on-disk folder (shown for every repo) on the left, "edited …"
-   pinned to the right. */
+/* Meta row: the on-disk folder (shown for every repo) on the left; "edited …"
+   and the status-count badges grouped on the right. */
 .sidebar-directory-meta {
   display: flex;
   align-items: center;
@@ -273,7 +275,14 @@
   width: 100%;
 }
 
-.sidebar-directory-meta .sidebar-directory-edited {
+/* The right-hand group of the meta row: "edited …" then the status badges,
+   pinned to the right edge as one unit so the badge counts always sit flush
+   right regardless of which of the two are present. */
+.sidebar-directory-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
   margin-left: auto;
 }
 
@@ -313,14 +322,13 @@
   letter-spacing: 0.01em;
 }
 
-/* Per-workspace session status badges (colored count circles), pinned to the
-   right edge of the identity row. */
+/* Per-workspace session status badges (colored count circles). Positioned by
+   the .sidebar-directory-meta-right group; here it only lays out the badges. */
 .sidebar-directory-status {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   flex: 0 0 auto;
-  margin-left: auto;
 }
 
 .sidebar-status-badge {

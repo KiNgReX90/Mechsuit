@@ -369,26 +369,9 @@ function Sidebar() {
                         </span>
                       </span>
                     )}
-                    {badges.length > 0 && (
-                      <span className="sidebar-directory-status">
-                        {badges.map((b) => {
-                          const label = `${b.count} ${STATUS_LABEL[b.status]}`;
-                          return (
-                            <span
-                              key={b.status}
-                              className={`sidebar-status-badge sidebar-status-badge--${b.status}`}
-                              aria-label={label}
-                              title={label}
-                            >
-                              {b.count}
-                            </span>
-                          );
-                        })}
-                      </span>
-                    )}
                   </span>
 
-                  {hasMeta && (
+                  {(hasMeta || badges.length > 0) && (
                     <span className="sidebar-directory-meta">
                       {identity.folder && (
                         <span className="sidebar-directory-folder">
@@ -412,21 +395,42 @@ function Sidebar() {
                           </span>
                         </span>
                       )}
-                      {edited && (
-                        <span
-                          className={
-                            stale
-                              ? "sidebar-directory-edited sidebar-directory-edited--stale"
-                              : "sidebar-directory-edited"
-                          }
-                        >
-                          {stale && (
+                      {(edited || badges.length > 0) && (
+                        <span className="sidebar-directory-meta-right">
+                          {edited && (
                             <span
-                              className="sidebar-directory-stale-dot"
-                              aria-hidden="true"
-                            />
+                              className={
+                                stale
+                                  ? "sidebar-directory-edited sidebar-directory-edited--stale"
+                                  : "sidebar-directory-edited"
+                              }
+                            >
+                              {stale && (
+                                <span
+                                  className="sidebar-directory-stale-dot"
+                                  aria-hidden="true"
+                                />
+                              )}
+                              edited {edited}
+                            </span>
                           )}
-                          edited {edited}
+                          {badges.length > 0 && (
+                            <span className="sidebar-directory-status">
+                              {badges.map((b) => {
+                                const label = `${b.count} ${STATUS_LABEL[b.status]}`;
+                                return (
+                                  <span
+                                    key={b.status}
+                                    className={`sidebar-status-badge sidebar-status-badge--${b.status}`}
+                                    aria-label={label}
+                                    title={label}
+                                  >
+                                    {b.count}
+                                  </span>
+                                );
+                              })}
+                            </span>
+                          )}
                         </span>
                       )}
                     </span>

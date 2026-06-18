@@ -395,6 +395,19 @@ describe("Sidebar", () => {
       expect(error).toHaveClass("sidebar-status-badge--error");
     });
 
+    it("renders the count badges on the meta row, not the identity row", async () => {
+      // The badges must live on the card's last (meta) row so their changing
+      // width never reflows the name/branch identity row.
+      seedStatuses([["s1", "ready"]]);
+
+      render(<Sidebar />);
+      await screen.findByText("repo");
+
+      const badge = screen.getByTitle("1 ready");
+      expect(badge.closest(".sidebar-directory-meta")).not.toBeNull();
+      expect(badge.closest(".sidebar-directory-head")).toBeNull();
+    });
+
     it("shows no badges for a workspace with no sessions", async () => {
       render(<Sidebar />);
       await screen.findByText("repo");
