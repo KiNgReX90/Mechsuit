@@ -51,9 +51,48 @@
   color: var(--text);
 }
 
-/* Body slot: fills the remaining body height for the bay layout (wi-04). */
+/* Body slot: fills the remaining body height for the bay layout. */
 .collected-workspace-body {
   position: relative;
   flex: 1;
   min-height: 0;
+}
+
+/*
+ * Bay auto-grid: rows stack vertically and split the body height evenly; each
+ * row's bays split its width evenly. Mirrors the session grid's row/tile flex
+ * layout so a row of bays tiles exactly the way a row of terminals does, driven
+ * by computeGridLayout's row counts.
+ */
+.collected-workspace-grid {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0.6rem;
+  padding: 0.6rem;
+}
+
+.collected-workspace-grid-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0.6rem;
+}
+
+/* Each bay flexes to share its row's width equally. */
+.collected-workspace-grid-row > .workspace-bay {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Empty state: centered hint when no workspace has a live session. */
+.collected-workspace-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  color: var(--text-dim, var(--text));
+  font-size: 0.95rem;
 }
