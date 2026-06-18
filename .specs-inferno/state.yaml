@@ -21,7 +21,7 @@ intents:
         complexity: low
         depends_on: []
       - id: wi-04-graph-model-store
-        status: pending
+        status: completed
         complexity: medium
         depends_on: [wi-01-worktree-discovery, wi-02-subagent-detection, wi-03-node-status-rollup]
       - id: wi-05-topbar-screen-scaffold
