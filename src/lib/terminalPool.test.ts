@@ -9,7 +9,7 @@
  *  - dispose is the only teardown — it disposes xterm, the input handler, and
  *    the output subscription, after which a fresh instance is built on demand.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutputEvent } from "../types";
 
 // --- xterm shim ------------------------------------------------------------
@@ -21,6 +21,7 @@ const onDataDisposeSpy = vi.fn();
 const fitSpy = vi.fn();
 const openSpy = vi.fn();
 const focusSpy = vi.fn();
+const loadAddonSpy = vi.fn();
 let constructed = 0;
 let dataHandler: ((data: string) => void) | undefined;
 
@@ -29,7 +30,7 @@ vi.mock("@xterm/xterm", () => ({
     cols = 80;
     rows = 24;
     write = writeSpy;
-    loadAddon = vi.fn();
+    loadAddon = loadAddonSpy;
     open = openSpy;
     dispose = disposeSpy;
     focus = focusSpy;
@@ -46,6 +47,21 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
     fit = fitSpy;
+  },
+}));
+
+// CanvasAddon mock: jsdom has no 2D canvas renderer. Track construction and
+// disposal so we can prove the renderer is attached on acquire and disposed on
+// release without ever disposing the xterm instance itself.
+let canvasConstructed = 0;
+const canvasDisposeSpy = vi.fn();
+
+vi.mock("@xterm/addon-canvas", () => ({
+  CanvasAddon: class {
+    dispose = canvasDisposeSpy;
+    constructor() {
+      canvasConstructed += 1;
+    }
   },
 }));
 
@@ -69,12 +85,27 @@ vi.mock("../ipc/commands", () => ({
 
 import { resizeSession, writeSession } from "../ipc/commands";
 import { onSessionOutput } from "../ipc/events";
+import { useSessionsStore } from "../state/sessionsStore";
+import { useStatusStore } from "../state/statusStore";
+import { useUiStore } from "../state/uiStore";
 import {
+  __setFlushScheduler,
   acquireTerminal,
   disposeTerminal,
   focusTerminal,
   releaseTerminal,
 } from "./terminalPool";
+
+/** Mark a set of session ids as grid/workspace panes (subject to the input
+ *  gate) and select the active one, mirroring the live uiStore/sessionsStore. */
+function seedActive(active: string | null, gridIds: string[]): void {
+  useSessionsStore.setState({
+    sessionsByDirectory: {
+      "/repo": gridIds.map((id) => ({ id, dirPath: "/repo" })),
+    },
+  });
+  useUiStore.setState({ focusedSessionId: active, expandedSessionId: null });
+}
 
 function newContainer(): HTMLDivElement {
   const el = document.createElement("div");
@@ -82,17 +113,36 @@ function newContainer(): HTMLDivElement {
   return el;
 }
 
+// The per-frame output flush is driven by requestAnimationFrame in the browser.
+// vitest's jsdom backs rAF with a macrotask timer, which a single awaited
+// microtask would not drain; swap in a microtask scheduler so the existing
+// `await Promise.resolve()` pattern deterministically drives one flush.
+beforeEach(() => {
+  __setFlushScheduler({
+    schedule: (cb) => {
+      queueMicrotask(cb);
+      return 0;
+    },
+    cancel: () => {},
+  });
+});
+
 afterEach(() => {
   // The pool is a module-level singleton; tear down every session a test may
   // use so the next test starts from a clean slate (and the shared output
   // subscription is released once the pool empties).
   disposeTerminal("p1");
   disposeTerminal("p2");
+  disposeTerminal("cmd");
   vi.clearAllMocks();
   constructed = 0;
+  canvasConstructed = 0;
   outputCb = undefined;
   dataHandler = undefined;
   document.body.innerHTML = "";
+  __setFlushScheduler(); // restore the environment default
+  useSessionsStore.setState({ sessionsByDirectory: {} });
+  useUiStore.setState({ focusedSessionId: null, expandedSessionId: null });
 });
 
 describe("terminalPool", () => {
@@ -125,6 +175,7 @@ describe("terminalPool", () => {
     await Promise.resolve(); // let the onSessionOutput subscription resolve
     releaseTerminal("p1");
     outputCb?.({ sessionId: "p1", data: "background" });
+    await Promise.resolve(); // let the coalesced per-frame flush run
     expect(writeSpy).toHaveBeenCalledWith("background");
   });
 
@@ -138,10 +189,11 @@ describe("terminalPool", () => {
     expect(c2.childElementCount).toBe(1); // re-attached
   });
 
-  it("only writes output destined for the matching session", () => {
+  it("only writes output destined for the matching session", async () => {
     acquireTerminal("p1", newContainer());
     outputCb?.({ sessionId: "p1", data: "mine" });
     outputCb?.({ sessionId: "other", data: "theirs" });
+    await Promise.resolve(); // let the coalesced per-frame flush run
     expect(writeSpy).toHaveBeenCalledTimes(1);
     expect(writeSpy).toHaveBeenCalledWith("mine");
   });
@@ -155,10 +207,11 @@ describe("terminalPool", () => {
     expect(onSessionOutput).toHaveBeenCalledTimes(1);
   });
 
-  it("routes the shared subscription to the addressed terminal", () => {
+  it("routes the shared subscription to the addressed terminal", async () => {
     acquireTerminal("p1", newContainer());
     acquireTerminal("p2", newContainer());
     outputCb?.({ sessionId: "p2", data: "hi-p2" });
+    await Promise.resolve(); // let the coalesced per-frame flush run
     expect(writeSpy).toHaveBeenCalledTimes(1);
     expect(writeSpy).toHaveBeenCalledWith("hi-p2");
   });
@@ -180,6 +233,62 @@ describe("terminalPool", () => {
     acquireTerminal("p1", newContainer());
     dataHandler?.("x");
     expect(writeSession).toHaveBeenCalledWith("p1", "x");
+  });
+
+  // --- input gate: only the active session forwards keystrokes --------------
+
+  it("forwards input from the active (focused) grid pane", () => {
+    seedActive("p1", ["p1", "p2"]);
+    acquireTerminal("p1", newContainer());
+    dataHandler?.("x");
+    expect(writeSession).toHaveBeenCalledWith("p1", "x");
+  });
+
+  it("drops stray input from a non-active grid pane (never reaches its PTY)", () => {
+    // p2 is a real grid pane but p1 is the active one: a late keystroke that
+    // lands on p2 after a click moved focus must NOT be written to p2's agent.
+    seedActive("p1", ["p1", "p2"]);
+    acquireTerminal("p2", newContainer());
+    dataHandler?.("stray");
+    expect(writeSession).not.toHaveBeenCalled();
+  });
+
+  it("a dropped carriage return on a non-active pane does not arm its prompt re-alert", () => {
+    seedActive("p1", ["p1", "p2"]);
+    acquireTerminal("p2", newContainer());
+    const markPrompted = vi.spyOn(useStatusStore.getState(), "markPrompted");
+    dataHandler?.("\r");
+    expect(markPrompted).not.toHaveBeenCalled();
+    expect(writeSession).not.toHaveBeenCalled();
+    markPrompted.mockRestore();
+  });
+
+  it("forwards input when the active pane is the expanded session", () => {
+    seedActive(null, ["p1", "p2"]);
+    useUiStore.setState({ expandedSessionId: "p2" });
+    acquireTerminal("p2", newContainer());
+    dataHandler?.("e");
+    expect(writeSession).toHaveBeenCalledWith("p2", "e");
+  });
+
+  it("does not gate the Commander session (it is not a grid pane)", () => {
+    // The Commander PTY is never in any directory's session list and never the
+    // focused/expanded grid session, so its input must always forward even
+    // while a grid pane is the active one.
+    seedActive("p1", ["p1"]);
+    acquireTerminal("cmd", newContainer());
+    dataHandler?.("voice");
+    expect(writeSession).toHaveBeenCalledWith("cmd", "voice");
+  });
+
+  it("still markPrompts and forwards on carriage return for the active pane", () => {
+    seedActive("p1", ["p1"]);
+    acquireTerminal("p1", newContainer());
+    const markPrompted = vi.spyOn(useStatusStore.getState(), "markPrompted");
+    dataHandler?.("ls\r");
+    expect(markPrompted).toHaveBeenCalledWith("p1");
+    expect(writeSession).toHaveBeenCalledWith("p1", "ls\r");
+    markPrompted.mockRestore();
   });
 
   it("pane.fit resizes the PTY to the terminal's dimensions", () => {
@@ -216,5 +325,100 @@ describe("terminalPool", () => {
     disposeTerminal("p1");
     acquireTerminal("p1", newContainer());
     expect(constructed).toBe(2);
+  });
+
+  // --- canvas renderer lifecycle -------------------------------------------
+
+  it("attaches a canvas renderer addon when a pane is acquired", () => {
+    acquireTerminal("p1", newContainer());
+    // The fit addon and the canvas renderer are both loaded onto the xterm.
+    expect(canvasConstructed).toBe(1);
+    expect(loadAddonSpy).toHaveBeenCalled();
+  });
+
+  it("disposes the canvas renderer on release WITHOUT disposing the xterm", () => {
+    acquireTerminal("p1", newContainer());
+    releaseTerminal("p1");
+    // Renderer detaches with the surface, but the live instance survives.
+    expect(canvasDisposeSpy).toHaveBeenCalledTimes(1);
+    expect(disposeSpy).not.toHaveBeenCalled();
+  });
+
+  it("re-creates the canvas renderer on re-acquire after release", () => {
+    acquireTerminal("p1", newContainer());
+    releaseTerminal("p1");
+    acquireTerminal("p1", newContainer());
+    // xterm instance reused (scrollback intact); a fresh renderer is attached.
+    expect(constructed).toBe(1);
+    expect(canvasConstructed).toBe(2);
+  });
+
+  it("does not duplicate the canvas renderer if re-acquired while still attached", () => {
+    const c = newContainer();
+    acquireTerminal("p1", c);
+    acquireTerminal("p1", c); // re-acquire without an intervening release
+    expect(canvasConstructed).toBe(1);
+  });
+
+  it("disposes the canvas renderer on disposeTerminal", () => {
+    acquireTerminal("p1", newContainer());
+    disposeTerminal("p1");
+    expect(canvasDisposeSpy).toHaveBeenCalledTimes(1);
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // --- per-frame output coalescing -----------------------------------------
+
+  it("coalesces a burst of chunks into a single ordered write per frame", async () => {
+    acquireTerminal("p1", newContainer());
+    outputCb?.({ sessionId: "p1", data: "a" });
+    outputCb?.({ sessionId: "p1", data: "b" });
+    outputCb?.({ sessionId: "p1", data: "c" });
+    // Nothing written synchronously — the chunks are buffered for the frame.
+    expect(writeSpy).not.toHaveBeenCalled();
+    await Promise.resolve(); // drive the per-frame flush
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith("abc");
+  });
+
+  it("concatenates multi-byte chunks byte-exact, never re-splitting", async () => {
+    acquireTerminal("p1", newContainer());
+    // The Rust reader aligns chunks on UTF-8 boundaries; the pool only joins.
+    outputCb?.({ sessionId: "p1", data: "héllo " });
+    outputCb?.({ sessionId: "p1", data: "🚀 wörld" });
+    await Promise.resolve();
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith("héllo 🚀 wörld");
+  });
+
+  it("keeps each session's buffer separate when coalescing", async () => {
+    acquireTerminal("p1", newContainer());
+    acquireTerminal("p2", newContainer());
+    outputCb?.({ sessionId: "p1", data: "one" });
+    outputCb?.({ sessionId: "p2", data: "two" });
+    outputCb?.({ sessionId: "p1", data: "-more" });
+    await Promise.resolve();
+    expect(writeSpy).toHaveBeenCalledTimes(2);
+    expect(writeSpy).toHaveBeenCalledWith("one-more");
+    expect(writeSpy).toHaveBeenCalledWith("two");
+  });
+
+  it("flushes a pending buffer before disposing the terminal (no lost output)", async () => {
+    acquireTerminal("p1", newContainer());
+    await Promise.resolve(); // resolve subscription
+    outputCb?.({ sessionId: "p1", data: "tail" });
+    // Dispose before the frame fires: the buffer must be flushed, not dropped.
+    disposeTerminal("p1");
+    expect(writeSpy).toHaveBeenCalledWith("tail");
+  });
+
+  it("does not write into a session after it has been disposed", async () => {
+    acquireTerminal("p1", newContainer());
+    await Promise.resolve();
+    disposeTerminal("p1");
+    writeSpy.mockClear();
+    outputCb?.({ sessionId: "p1", data: "late" });
+    await Promise.resolve();
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 });
