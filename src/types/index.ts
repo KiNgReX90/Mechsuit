@@ -33,6 +33,23 @@ export interface DiscoveredDir {
   alreadyManaged: boolean;
 }
 
+/**
+ * A git worktree of a managed repository, enumerated from
+ * `git worktree list --porcelain`. Mirrors the Rust `WorktreeInfo` (camelCase).
+ */
+export interface WorktreeInfo {
+  /** Absolute path of the worktree's working directory. */
+  path: string;
+  /** Checked-out branch name (no `refs/heads/` prefix); null for detached HEAD. */
+  branch: string | null;
+  /** HEAD commit SHA; null when the record carries no HEAD (e.g. bare repo). */
+  head: string | null;
+  /** True for the repository's primary (first) worktree. */
+  isPrimary: boolean;
+  /** Path of the worktree this one is nested under, or null when not nested. */
+  parentPath: string | null;
+}
+
 /** Kind of PTY session: a normal workspace pane, or the singular Commander. */
 export type SessionKind = "workspace" | "commander";
 
