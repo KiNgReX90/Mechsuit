@@ -53,6 +53,7 @@ beforeEach(() => {
     selectedDirectoryPath: DIR,
     focusedSessionId: null,
     expandedSessionId: null,
+    collectedOpen: false,
   });
   useStatusStore.setState({ statusBySession: {} });
   usePausedStore.setState({ pausedIds: new Set() });
@@ -96,6 +97,41 @@ describe("Workspace", () => {
     await waitFor(() => expect(mockedCommands.listSessions).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getAllByTestId("workspace-tile")).toHaveLength(2),
+    );
+  });
+
+  it("yields its terminals to the collected overlay while the collected view is open", async () => {
+    // The terminal pool holds ONE DOM surface per session, and the collected
+    // overlay mounts a Terminal for every active session — including this
+    // selected directory's. If the Workspace kept its own Terminals mounted
+    // behind the overlay, the two mounts would fight over that single surface:
+    // the overlay steals it, then closing the overlay removes the shared surface
+    // and blanks the grid. So while the collected view is open the Workspace must
+    // NOT mount its own terminals — it yields every surface to the overlay.
+    mockedCommands.listSessions.mockResolvedValue([session("s1"), session("s2")]);
+    useUiStore.setState({ collectedOpen: true });
+
+    render(<Workspace />);
+
+    await waitFor(() => expect(mockedCommands.listSessions).toHaveBeenCalled());
+    expect(screen.queryAllByTestId("terminal-stub")).toHaveLength(0);
+  });
+
+  it("re-mounts its terminals when the collected view closes", async () => {
+    mockedCommands.listSessions.mockResolvedValue([session("s1")]);
+    useUiStore.setState({ collectedOpen: true });
+
+    render(<Workspace />);
+    await waitFor(() => expect(mockedCommands.listSessions).toHaveBeenCalled());
+    expect(screen.queryAllByTestId("terminal-stub")).toHaveLength(0);
+
+    // Closing the overlay returns the surfaces: the grid re-mounts its Terminals
+    // (which re-acquire the pooled instances, scrollback intact).
+    await act(async () => {
+      useUiStore.setState({ collectedOpen: false });
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("terminal-stub")).toHaveLength(1),
     );
   });
 

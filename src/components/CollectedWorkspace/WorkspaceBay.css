@@ -80,6 +80,12 @@
 
 .workspace-bay-body {
   position: relative;
+  /* Must be a flex column so the shared `.workspace-grid` (flex: 1 1 auto) fills
+     the body's height. Without it the grid/rows/tiles collapse to content height
+     and each `.terminal-pane` (height: 100% of a 0-high tile) renders blank —
+     which is why bays showed empty terminals. */
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
 }

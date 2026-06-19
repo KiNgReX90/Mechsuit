@@ -40,6 +40,12 @@ function Workspace() {
   const selectedDirectoryPath = useUiStore((s) => s.selectedDirectoryPath);
   const focusedSessionId = useUiStore((s) => s.focusedSessionId);
   const expandedSessionId = useUiStore((s) => s.expandedSessionId);
+  // The collected view is a full-body overlay that hosts EVERY directory's
+  // terminals in its own bays. Each session has a single pooled DOM surface, so
+  // while the overlay is open this Workspace must yield its terminal subtree
+  // (unmount it) rather than fight the overlay for the same surfaces; closing the
+  // overlay re-mounts the grid, which re-acquires the pooled instances intact.
+  const collectedOpen = useUiStore((s) => s.collectedOpen);
   const setFocusedSessionId = useUiStore((s) => s.setFocusedSessionId);
   const setExpandedSessionId = useUiStore((s) => s.setExpandedSessionId);
 
@@ -163,7 +169,7 @@ function Workspace() {
         onSpawnTerminals={handleSpawnTerminals}
       />
 
-      {expanded ? (
+      {collectedOpen ? null : expanded ? (
         (() => {
           const expandedPaused = pausedIds.has(expanded);
           return (
